@@ -5,7 +5,10 @@ let S: CGFloat = 1024
 let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(S), pixelsHigh: Int(S), bitsPerSample: 8, samplesPerPixel: 4,
                            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
 NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-let bg = NSBezierPath(roundedRect: NSRect(x: 100, y: 100, width: 824, height: 824), xRadius: 185, yRadius: 185)
+// "ios": celoplošný čtverec bez průhlednosti (rohy zakulatí systém)
+let ios = CommandLine.arguments.count > 2 && CommandLine.arguments[2] == "ios"
+if ios { let t = NSAffineTransform(); t.scale(by: S / 824); t.translateX(by: -100, yBy: -100); t.concat() }
+let bg = ios ? NSBezierPath(rect: NSRect(x: 100, y: 100, width: 824, height: 824)) : NSBezierPath(roundedRect: NSRect(x: 100, y: 100, width: 824, height: 824), xRadius: 185, yRadius: 185)
 NSGradient(colors: [NSColor(red: 0.12, green: 0.45, blue: 0.95, alpha: 1), NSColor(red: 0.04, green: 0.22, blue: 0.62, alpha: 1)])!.draw(in: bg, angle: -90)
 NSColor.white.setStroke(); NSColor.white.setFill()
 func line(_ a: NSPoint, _ b: NSPoint, _ w: CGFloat = 30) { let p = NSBezierPath(); p.move(to: a); p.line(to: b); p.lineWidth = w; p.lineCapStyle = .round; p.stroke() }

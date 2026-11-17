@@ -425,8 +425,61 @@ cv.addEventListener('wheel', e => {
   if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.012), e.clientX - r.left, e.clientY - r.top);
   else { V.ox -= e.deltaX; V.oy -= e.deltaY; render(); }
 }, { passive: false });
-cv.addEventListener('gesturestart', e => { e.preventDefault(); const V = mode === 'real' ? rview : view; V._gs = V.s; });
-cv.addEventListener('gesturechange', e => { e.preventDefault(); const V = mode === 'real' ? rview : view, r = cv.getBoundingClientRect(); zoomAt((V._gs * e.scale) / V.s, e.clientX - r.left, e.clientY - r.top); });
+cv.addEventListener('gesturestart', e => { e.preventDefault(); if (T.pinch) return; const V = mode === 'real' ? rview : view; V._gs = V.s; });
+cv.addEventListener('gesturechange', e => { e.preventDefault(); if (T.pinch) return; const V = mode === 'real' ? rview : view, r = cv.getBoundingClientRect(); zoomAt((V._gs * e.scale) / V.s, e.clientX - r.left, e.clientY - r.top); });
+
+// ------------------------------------------------------------ dotyk (iPad)
+// Jeden prst = myš (klepnutí, tažení), dvojí klepnutí = vlastnosti, dlouhý stisk = zrušit nástroj,
+// dva prsty = posun a přiblížení.
+const T = { id: null, sent: false, x0: 0, y0: 0, x: 0, y: 0, timer: 0, lp: 0, pinch: null, lastTap: 0, lx: 0, ly: 0, cancel: false };
+function synth(type, x, y, target) {
+  (target || cv).dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, buttons: type === 'mouseup' ? 0 : 1, bubbles: true, cancelable: true, view: window }));
+}
+function tDown() { if (T.sent || T.id === null) return; T.sent = true; clearTimeout(T.timer); synth('mousedown', T.x0, T.y0); if (T.x !== T.x0 || T.y !== T.y0) synth('mousemove', T.x, T.y); }
+function pinchInfo(tl) { const a = tl[0], b = tl[1]; return { cx: (a.clientX + b.clientX) / 2, cy: (a.clientY + b.clientY) / 2, d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1 }; }
+cv.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (e.touches.length >= 2) {
+    clearTimeout(T.timer); clearTimeout(T.lp);
+    if (T.sent) synth('mouseup', T.x, T.y, window);
+    T.id = null; T.sent = false; T.cancel = true; T.pinch = pinchInfo(e.touches); return;
+  }
+  const t = e.changedTouches[0];
+  Object.assign(T, { id: t.identifier, sent: false, cancel: false, x0: t.clientX, y0: t.clientY, x: t.clientX, y: t.clientY });
+  synth('mousemove', t.clientX, t.clientY);
+  T.timer = setTimeout(tDown, 90);
+  T.lp = setTimeout(() => {
+    if (T.id === null || Math.hypot(T.x - T.x0, T.y - T.y0) > 10) return;
+    tDown(); synth('mouseup', T.x, T.y, window); T.id = null; T.cancel = true;
+    cv.dispatchEvent(new MouseEvent('contextmenu', { clientX: T.x, clientY: T.y, bubbles: true, cancelable: true }));
+  }, 600);
+}, { passive: false });
+cv.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (T.pinch && e.touches.length >= 2) {
+    const n = pinchInfo(e.touches), V = mode === 'real' ? rview : view, r = cv.getBoundingClientRect();
+    V.ox += n.cx - T.pinch.cx; V.oy += n.cy - T.pinch.cy; zoomAt(n.d / T.pinch.d, n.cx - r.left, n.cy - r.top); T.pinch = n; return;
+  }
+  const t = [...e.changedTouches].find(x => x.identifier === T.id); if (!t) return;
+  T.x = t.clientX; T.y = t.clientY;
+  if (Math.hypot(T.x - T.x0, T.y - T.y0) > 6) { clearTimeout(T.lp); tDown(); }
+  if (T.sent) synth('mousemove', T.x, T.y, window);
+}, { passive: false });
+function tEnd(e) {
+  e.preventDefault();
+  if (T.pinch) { if (e.touches.length < 2) T.pinch = null; return; }
+  const t = [...e.changedTouches].find(x => x.identifier === T.id); if (!t) return;
+  clearTimeout(T.lp); T.x = t.clientX; T.y = t.clientY;
+  if (T.cancel) { T.id = null; return; }
+  tDown(); synth('mouseup', T.x, T.y, window); T.id = null;
+  if (e.type === 'touchcancel') return;
+  const now = Date.now(), tap = Math.hypot(T.x - T.x0, T.y - T.y0) < 10;
+  if (tap) { if (now - T.lastTap < 380 && Math.hypot(T.x - T.lx, T.y - T.ly) < 24) { T.lastTap = 0; synth('dblclick', T.x, T.y); } else { T.lastTap = now; T.lx = T.x; T.ly = T.y; } }
+  else T.lastTap = 0;
+}
+cv.addEventListener('touchend', tEnd, { passive: false });
+cv.addEventListener('touchcancel', tEnd, { passive: false });
+
 
 // ------------------------------------------------------------ klávesnice
 window.addEventListener('keydown', e => {
@@ -684,6 +737,10 @@ const RHINT = {
   wire: 'Vodič: klik na svorku = začátek, kliky do prázdna = lomové body, klik na další svorku = konec. ⌫ = zrušit poslední lom, Esc = zrušit.',
   sim: 'SIMULACE PODLE REALITY: proud teče jen nataženými vodiči. Klikáním ovládáte jističe, tlačítka a přepínače (Shift = tlačítko zůstane stisknuté). Najetím na svorku změříte napětí.',
 };
+if (window.matchMedia && matchMedia('(pointer: coarse)').matches) {
+  HINTS.select = 'Výběr: klepnutí = vybrat, tažení = přesun, dvojí klepnutí = vlastnosti, dlouhý stisk = zrušit nástroj. Dva prsty = posun a přiblížení.';
+  RHINT.select = 'Realita: tažením ze svorky na svorku natáhnete vodič (klepáním do prázdna lomíte). Přístroj přesunete tažením, dvojí klepnutí = vlastnosti a barva. Dva prsty = posun a přiblížení.';
+}
 function rToWorld(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left - rview.ox) / rview.s, (e.clientY - r.top - rview.oy) / rview.s]; }
 function rScene() { rsc = R.scene(doc); return rsc; }
 function rHit(x, y, devFirst) {

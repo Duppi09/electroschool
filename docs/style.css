@@ -98,3 +98,18 @@ body.calc .grp.rl { display: none; }
 .fields label:has(select) select { grid-column: 2; }
 .pal .swatch.auto { color: #fff; font-weight: 800; font-size: 13px; text-shadow: 0 0 3px #000; }
 #wnorm { max-width: 260px; }
+
+/* dotyk (iPad) */
+#cv { touch-action: none; -webkit-touch-callout: none; }
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+@media (pointer: coarse) {
+  button, select { min-height: 34px; padding: 5px 12px; }
+  .tab { padding: 6px 14px; }
+  .pal { width: 240px; }
+  .setpick button { min-height: 32px; }
+  dialog input, dialog select { padding: 8px 9px; font-size: 16px; }
+  .fields input, .fields select, .calctop input { font-size: 16px; }
+}
+body.ios #bar { padding-top: max(7px, env(safe-area-inset-top)); padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+body.ios #status { padding-bottom: max(4px, env(safe-area-inset-bottom)); }
+@media (pointer: coarse) { button[data-cmd="undo"], button[data-cmd="redo"], button[data-cmd="rotate"], button[data-cmd="delete"] { font-size: 18px; min-width: 42px; padding: 0 8px; } }

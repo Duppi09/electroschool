@@ -12,7 +12,17 @@ Obě verze sdílejí tentýž kód ve složce `app/`.
 ```bash
 ./build_web.sh   # webová verze do docs/
 ./build.sh       # aplikace pro macOS (vyžaduje Xcode / swiftc)
+open ios/ElectroSchool.xcodeproj   # aplikace pro iPadOS
 ```
+
+### iPad (iPadOS 17+)
+
+Projekt `ios/ElectroSchool.xcodeproj` používá stejné HTML/JS ze složky `app/` (přidané jako složka, změny se projeví při dalším sestavení).
+Ovládání dotykem: klepnutí = klik, tažení = přesun / natažení vodiče, dvojí klepnutí = vlastnosti, dlouhý stisk = zrušit nástroj,
+dva prsty = posun a přiblížení. Soubory `.cad` se otevírají a ukládají přes aplikaci Soubory, PNG se sdílí přes nabídku Sdílet.
+
+Nahrání do App Store / TestFlight: v Xcode vyberte v *Signing & Capabilities* svůj tým (případně změňte Bundle Identifier),
+cíl *Any iOS Device*, pak *Product → Archive → Distribute App*.
 
 Testy (JavaScriptCore z macOS):
 
