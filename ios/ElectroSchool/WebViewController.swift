@@ -9,6 +9,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
     private var pending: URL?
     private var known: [String: URL] = [:]      // cesta -> URL z výběru souborů (oprávnění)
     private var savingAs: String?               // jméno souboru při „Uložit jako“
+    private let loading = UIStackView()          // „Načítám…“, než se webová část spustí
     static let cadType = UTType(filenameExtension: "cad") ?? .data
 
     override func loadView() {
@@ -16,6 +17,13 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         let ucc = cfg.userContentController
         ucc.add(WeakHandler(self), name: "es")
         ucc.addUserScript(WKUserScript(source: "document.body.classList.add('ios')", injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        // chyby JavaScriptu do konzole Xcode
+        ucc.addUserScript(WKUserScript(source: """
+            (function(){ var h = window.webkit.messageHandlers.es, send = function(t){ try { h.postMessage({cmd:'log', text:String(t)}); } catch(e){} };
+            window.addEventListener('error', function(e){ send('JS chyba: ' + e.message + ' @ ' + (e.filename||'').split('/').pop() + ':' + e.lineno); });
+            window.addEventListener('unhandledrejection', function(e){ send('JS promise: ' + (e.reason && e.reason.stack || e.reason)); });
+            var ce = console.error; console.error = function(){ send('console.error: ' + Array.prototype.join.call(arguments, ' ')); ce.apply(console, arguments); }; })();
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = WKWebView(frame: .zero, configuration: cfg)
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -32,6 +40,13 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         super.viewDidLoad()
         let dir = Bundle.main.resourceURL!.appendingPathComponent("app", isDirectory: true)
         web.loadFileURL(dir.appendingPathComponent("index.html"), allowingReadAccessTo: dir)
+        let spin = UIActivityIndicatorView(style: .large); spin.startAnimating()
+        let label = UILabel(); label.text = "ElectroSchool se načítá…"; label.textColor = .secondaryLabel; label.font = .preferredFont(forTextStyle: .headline)
+        loading.axis = .vertical; loading.spacing = 14; loading.alignment = .center
+        loading.addArrangedSubview(spin); loading.addArrangedSubview(label)
+        loading.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(loading)
+        NSLayoutConstraint.activate([loading.centerXAnchor.constraint(equalTo: view.centerXAnchor), loading.centerYAnchor.constraint(equalTo: view.centerYAnchor)])
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool { true }
@@ -71,7 +86,11 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
     func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let m = message.body as? [String: Any], let cmd = m["cmd"] as? String else { return }
         switch cmd {
+        case "log":
+            print("[web] \((m["text"] as? String) ?? "")")
         case "ready":
+            print("[web] připraveno")
+            UIView.animate(withDuration: 0.25, animations: { self.loading.alpha = 0 }) { _ in self.loading.removeFromSuperview() }
             ready = true
             if let u = pending { pending = nil; open(url: u) }
         case "title":
@@ -150,7 +169,10 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
         present(a, animated: true)
     }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { webView.reload() }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { print("[web] WebContent proces skončil, načítám znovu"); webView.reload() }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { print("[web] stránka načtena: \(webView.url?.lastPathComponent ?? "")") }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { print("[web] chyba načtení: \(error)") }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { print("[web] chyba načtení: \(error)") }
 
     private func alert(_ title: String, _ text: String) {
         let a = UIAlertController(title: title, message: text, preferredStyle: .alert)
