@@ -42,7 +42,7 @@ function pushUndo() { undoStack.push(snap_()); if (undoStack.length > 150) undoS
 function restore(json) { const j = JSON.parse(json); if (Array.isArray(j)) doc.items = j; else { doc.items = j.items; doc.real = j.real || ES.emptyReal(); } sel = new Set(); rsel = new Set(); rwsel = -1; touch(); render(); }
 function hint(s) { $('#hint').textContent = s; }
 const HINTS = {
-  connect: 'Propojení: klepněte na první svorku (nebo vodič), pak na druhou. Všechny vodiče se pak přepočítají tak, aby se nepřekrývaly. Prst můžete držet a posouvat – lupa ukazuje, kam se trefíte, bod se vybere po zvednutí prstu. Klepnutí do prázdna / Esc = zrušit začátek.',
+  connect: 'Propojení: klepněte na první svorku (nebo vodič), pak na druhou. Všechny vodiče se pak přepočítají tak, aby se nepřekrývaly. Prst můžete držet a posouvat, bod se vybere až po zvednutí prstu. Klepnutí do prázdna / Esc = zrušit začátek.',
   select: 'Výběr: klik = vybrat, tažení = přesun, dvojklik = vlastnosti, R = otočit, ⌫ = smazat. Posun plátna: dva prsty / mezerník + tažení, zoom: gesto nebo ⌘ + kolečko.',
   place: 'Kliknutím vložíte součástku. R = otočit, Esc = konec.',
   wire: 'Vodič: klik = začátek, další kliky = lomové body, konec na svorce nebo dvojklikem. Odbočka z vodiče vytvoří tečku; křížení bez tečky spojené není. Shift = obrátit lomení, Esc = konec.',
@@ -181,7 +181,6 @@ function render() {
     if (drag && drag.kind === 'gfx') { const g = ES.newItem(tool.type, drag.x0, drag.y0); g.n[10] = mouse.x; g.n[11] = mouse.y; ES.drawItem(ctx, g, {}); }
     if (drag && drag.kind === 'band') { ctx.strokeStyle = '#0a66e8'; ctx.fillStyle = 'rgba(10,102,232,.1)'; ctx.lineWidth = 1 / view.s; const x = Math.min(drag.x0, mouse.rx), y = Math.min(drag.y0, mouse.ry), w = Math.abs(mouse.rx - drag.x0), h = Math.abs(mouse.ry - drag.y0); ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h); }
   }
-  drawLoupe();
   $('#pos').textContent = (sim ? 'čas ' + sim.t.toFixed(1) + ' s   ' : '') + 'x ' + mouse.x + '  y ' + mouse.y + '   ' + Math.round(view.s * 25) + ' %';
 }
 function route(a, b, flip) {
@@ -370,7 +369,7 @@ function pickPoint(rx, ry) {
   return best;
 }
 function connectPick(c) {
-  if (!c) { if (tool.a) { tool.a = null; render(); hint('Začátek zrušen. ' + HINTS.connect); } else hint('Tady není svorka ani vodič – klepněte přesně na svorku (lupa nad prstem ukazuje místo).'); return; }
+  if (!c) { if (tool.a) { tool.a = null; render(); hint('Začátek zrušen. ' + HINTS.connect); } else hint('Tady není svorka ani vodič – klepněte přesně na svorku.'); return; }
   if (!tool.a) { tool.a = c; hint('Začátek: ' + c.p[0] + ', ' + c.p[1] + ' – teď klepněte na druhý bod.'); render(); return; }
   if (tool.a.p[0] === c.p[0] && tool.a.p[1] === c.p[1]) { tool.a = null; hint(HINTS.connect); render(); return; }
   pushUndo(); const t0 = Date.now();
@@ -380,20 +379,6 @@ function connectPick(c) {
 function setAutoRoute(v) {
   autoRoute = v; try { localStorage.setItem('es.autoroute', v ? '1' : '0'); } catch (e) {}
   $('#autort').classList.toggle('on', v); if (tool.kind === 'wire') { tool.a = null; tool.start = null; setTool(tool); }
-}
-// lupa nad prstem
-function drawLoupe() {
-  if (!T || T.id === null || T.pinch) return;
-  const dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect(), fx = T.x - r.left, fy = T.y - r.top, R0 = 62, Z = 2.4, rs = R0 / Z;
-  let cx = fx, cy = fy - 105; if (cy < R0 + 6) { cy = fy; cx = fx + (fx > r.width / 2 ? -1 : 1) * 120; }
-  ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.beginPath(); ctx.arc(cx, cy, R0, 0, 7); ctx.save(); ctx.clip();
-  ctx.fillStyle = '#fff'; ctx.fillRect(cx - R0, cy - R0, 2 * R0, 2 * R0);
-  ctx.drawImage(cv, (fx - rs) * dpr, (fy - rs) * dpr, 2 * rs * dpr, 2 * rs * dpr, cx - R0, cy - R0, 2 * R0, 2 * R0);
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy); ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10); ctx.stroke();
-  ctx.strokeStyle = '#0a66e8'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, R0, 0, 7); ctx.stroke();
-  ctx.restore();
 }
 function setTool(t) {
   tool = t; if (t.kind !== 'place') placeRot = 0;
@@ -505,7 +490,7 @@ cv.addEventListener('touchstart', e => {
   T.timer = setTimeout(tDown, 90);
   T.lp = setTimeout(() => {
     if (T.id === null || Math.hypot(T.x - T.x0, T.y - T.y0) > 10) return;
-    if (!sim && (mode === 'real' ? (rdraft || rtool.kind === 'wire') : autoOn(tool))) return; // při míření s lupou nerušit
+    if (!sim && (mode === 'real' ? (rdraft || rtool.kind === 'wire') : autoOn(tool))) return; // při míření nerušit
     tDown(); synth('mouseup', T.x, T.y, window); T.id = null; T.cancel = true;
     cv.dispatchEvent(new MouseEvent('contextmenu', { clientX: T.x, clientY: T.y, bubbles: true, cancelable: true }));
   }, 600);
@@ -838,7 +823,6 @@ function renderReal() {
   if (rtool.kind === 'place' && rmouse.in && !sim) {
     const g = R.presetDevice(rtool.types, ''); g.x = rmouse.x - g.w / 2; g.y = rmouse.y - g.h / 2; ctx.globalAlpha = 0.55; R.drawDevice(ctx, g, { icon: true }); ctx.globalAlpha = 1;
   }
-  drawLoupe();
   $('#pos').textContent = (sim ? 'čas ' + sim.t.toFixed(1) + ' s   ' : '') + 'realita   ' + Math.round(rview.s / 2.4 * 100) + ' %';
 }
 function rFit() {
