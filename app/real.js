@@ -806,18 +806,57 @@ function placeInSchema(doc, items) {
 // ---------------------------------------------------------------- překreslení schématu podle reality
 // Vodiče schématu se nahradí: každá síť reality = strom kolmých vodičů (hledání cesty A*),
 // který nesmí vést přes cizí svorky, souběžně s cizím vodičem ani se na něm lomit.
+const ROUTED = new Set([4000, 4009, 4010]);
 function schemaFromReal(doc) {
+  doc.items = doc.items.filter(it => !(ROUTED.has(it.type) || it.type === ES.NODE));
+  const rn = ES.buildRealNets(doc);
+  // barva -> typ vodiče
+  const colOf = new Map();
+  for (const w of doc.real.wires) { const n = 'r' + rn.ofKey.get(w.a[0] + ':' + w.a[1]); if (!colOf.has(n)) colOf.set(n, {}); const m = colOf.get(n); m[w.c] = (m[w.c] || 0) + 1; }
+  const typeOf = n => { const m = colOf.get(n) || {}; const top = Object.keys(m).sort((a, b) => m[b] - m[a])[0]; return top === 'gnye' ? 4010 : top === '#2f80ed' ? 4009 : 4000; };
+  const res = routeSchema(doc, it => isReal(it) ? (ti => 'r' + rn.ofKey.get(it.uid + ':' + ti)) : null, typeOf);
+  const cmp = compare(doc);
+  return { wires: res.wires, failed: res.failed, conflicts: res.conflicts, missing: cmp.missing, extra: cmp.extra };
+}
+
+// Přetrasuje všechny vodiče schématu (L, N, PE) tak, aby se vodiče různých sítí nepřekrývaly
+// a nevedly přes cizí svorky. Spojení zůstanou zachována; join = další spojení [bodA, bodB, typ]
+// (bod = [x, y] svorky nebo bodu na vodiči). Vodiče nevedoucí k žádné svorce zaniknou.
+function rerouteSchema(doc, join) {
+  const sn = ES.buildNets(doc), par = new Map();
+  const find = a => { while (par.has(a) && par.get(a) !== a) a = par.get(a); return a; };
+  const netAt = p => { let n = sn.ofKey.get(p[0] + ',' + p[1]); if (n !== undefined) return n;
+    for (const it of doc.items) if (ROUTED.has(it.type) && ES.onSeg(p[0], p[1], [it.n[8], it.n[9], it.n[10], it.n[11]])) return sn.ofKey.get(it.n[8] + ',' + it.n[9]);
+    return undefined; };
+  const types = new Map(), forced = new Map();
+  for (const it of doc.items) if (ROUTED.has(it.type)) { const n = sn.ofKey.get(it.n[8] + ',' + it.n[9]); if (!types.has(n)) types.set(n, {}); const m = types.get(n); m[it.type] = (m[it.type] || 0) + Math.abs(it.n[10] - it.n[8]) + Math.abs(it.n[11] - it.n[9]); }
+  for (const [a, b, t] of join || []) {
+    const na = netAt(a), nb = netAt(b); if (na === undefined || nb === undefined) continue;
+    const ra = find(na), rb = find(nb); if (ra !== rb) par.set(ra, rb);
+    if (t) forced.set(rb, t);
+  }
+  const typeOf = key => {
+    const r = +key.slice(1);
+    for (const [k, t] of forced) if (find(k) === r) return t;
+    const m = {}; for (const [n, tm] of types) if (find(n) === r) for (const t in tm) m[t] = (m[t] || 0) + tm[t];
+    const top = Object.keys(m).sort((a, b) => m[b] - m[a])[0]; return top ? +top : 4000;
+  };
+  doc.items = doc.items.filter(it => !(ROUTED.has(it.type) || it.type === ES.NODE));
+  return routeSchema(doc, it => ti => { const p = ES.termsOf(it)[ti], n = sn.ofKey.get(p[0] + ',' + p[1]); return n === undefined ? null : 's' + find(n); }, typeOf);
+}
+
+// Jádro trasování: netFn(it) -> (ti -> klíč sítě | null) nebo null; typeOf(klíč) -> typ vodiče.
+function routeSchema(doc, netFn, typeOf) {
   const G = 3, K = (x, y) => x + ',' + y;
-  doc.items = doc.items.filter(it => !(it.type === 4000 || it.type === 4009 || it.type === 4010 || it.type === ES.NODE));
-  const rn = ES.buildRealNets(doc), comps = doc.items.filter(it => { const d = ES.getDef(it.type); return d.terms && d.terms.length; });
+  const comps = doc.items.filter(it => { const d = ES.getDef(it.type); return d.terms && d.terms.length; });
   const occ = new Map(), nets = new Map(); let conflicts = 0;
   const mark = (x, y, n, hard, hz, vt) => { const k = K(x, y); let o = occ.get(k); if (!o) occ.set(k, o = { n, hard: false, h: false, v: false }); o.hard = o.hard || hard; o.h = o.h || hz; o.v = o.v || vt; return o; };
   for (const it of comps) {
-    const real = isReal(it);
+    const f = netFn(it);
     ES.termsOf(it).forEach(([x, y], ti) => {
-      const n = real ? 'r' + rn.ofKey.get(it.uid + ':' + ti) : 'x' + it.uid + ':' + ti, o = occ.get(K(x, y));
+      const nn = f && f(ti), n = nn || 'x' + it.uid + ':' + ti, o = occ.get(K(x, y));
       if (o && o.n !== n) conflicts++; else mark(x, y, n, true, false, false);
-      if (real) { if (!nets.has(n)) nets.set(n, []); const a = nets.get(n); if (!a.some(p => p[0] === x && p[1] === y)) a.push([x, y]); }
+      if (nn) { if (!nets.has(n)) nets.set(n, []); const a = nets.get(n); if (!a.some(p => p[0] === x && p[1] === y)) a.push([x, y]); }
     });
   }
   for (const it of doc.items) if (ES.WIRE.has(it.type)) { // ponechané spojnice GRAFCET
@@ -834,10 +873,6 @@ function schemaFromReal(doc) {
   }
   if (!bb) return { wires: 0, failed: 0, conflicts, missing: [], extra: [] };
   const X0 = Math.floor(bb[0] / G) * G - 30, Y0 = Math.floor(bb[1] / G) * G - 30, X1 = bb[2] + 30, Y1 = bb[3] + 30;
-  // barva -> typ vodiče
-  const colOf = new Map();
-  for (const w of doc.real.wires) { const n = 'r' + rn.ofKey.get(w.a[0] + ':' + w.a[1]); if (!colOf.has(n)) colOf.set(n, {}); const m = colOf.get(n); m[w.c] = (m[w.c] || 0) + 1; }
-  const typeOf = n => { const m = colOf.get(n) || {}; const top = Object.keys(m).sort((a, b) => m[b] - m[a])[0]; return top === 'gnye' ? 4010 : top === '#2f80ed' ? 4009 : 4000; };
   const edges = [];
   for (const [n, pts] of nets) {
     if (pts.length < 2) continue;
@@ -867,7 +902,7 @@ function schemaFromReal(doc) {
         const nx = x + DX[d], ny = y + DY[d]; if (nx < X0 || nx > X1 || ny < Y0 || ny > Y1) continue;
         const q = occ.get(K(nx, ny)), isT = nx === t[0] && ny === t[1];
         let cost = 1;
-        if (q && q.n !== n && !isT) { if (q.hard || ((d & 1) === 0 ? q.h : q.v)) continue; cost += 2; }
+        if (q && q.n !== n && !isT) { if (q.hard || ((d & 1) === 0 ? q.h : q.v)) continue; cost += 2; } else if (q && !isT && ((d & 1) === 0 ? q.h : q.v)) cost += 0.5;
         if (body.has(K(nx, ny)) && !isT) cost += 6;
         if (dir >= 0 && d !== dir) cost += 3;
         const ng = g + cost, nk = K(nx, ny) + ',' + d;
@@ -893,8 +928,7 @@ function schemaFromReal(doc) {
     }
     for (const p of cor) mark(p[0], p[1], e.n, true, false, false);
   }
-  const cmp = compare(doc);
-  return { wires: count, failed, conflicts, missing: cmp.missing, extra: cmp.extra };
+  return { wires: count, failed, conflicts };
 }
 
 // ---------------------------------------------------------------- paleta (sestavy prvků)
@@ -991,5 +1025,5 @@ function colorCheck(doc, std) {
   return bad;
 }
 
-ES.Real = { NORMS, normColor, colorCheck, wireFunc, WCOL, WNAME, PRESETS, devices, famOf, layout, scene, wirePts, routes, drawWire, drawDevice, drawScene, stateOf, termName, wiresFromSchema, compare, schemaFromReal, placeInSchema, presetDevice, isReal, colorFor };
+ES.Real = { rerouteSchema, NORMS, normColor, colorCheck, wireFunc, WCOL, WNAME, PRESETS, devices, famOf, layout, scene, wirePts, routes, drawWire, drawDevice, drawScene, stateOf, termName, wiresFromSchema, compare, schemaFromReal, placeInSchema, presetDevice, isReal, colorFor };
 })(typeof window !== 'undefined' ? window : globalThis);

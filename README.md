@@ -15,11 +15,19 @@ Obě verze sdílejí tentýž kód ve složce `app/`.
 open ios/ElectroSchool.xcodeproj   # aplikace pro iPadOS
 ```
 
+### Automatické vodiče (výchozí na iPadu)
+
+Tlačítko **Automatické vodiče** ve schématu: zvolíte vodič (L, N nebo PE), klepnete na první svorku (nebo na existující vodič)
+a pak na druhou. Po každém propojení se **přepočítají všechny vodiče schématu**: vedou pravoúhle, vodiče různých sítí se
+nepřekrývají, nevedou přes cizí svorky ani se nelomí na cizím vodiči (křížení zůstává). Začátek je označen zeleně, cíl pod prstem
+modře, přerušovaná čára ukazuje, co se spojí. Bod se vybere až po zvednutí prstu, takže lze mířit s lupou.
+Tlačítko **Přetrasovat** přepočítá vodiče kdykoli. Přepočet zachová všechna spojení; vodiče, které nevedou k žádné svorce, zaniknou.
+
 ### iPad (iPadOS 17+)
 
 Projekt `ios/ElectroSchool.xcodeproj` používá stejné HTML/JS ze složky `app/` (přidané jako složka, změny se projeví při dalším sestavení).
 Ovládání dotykem: klepnutí = klik, tažení = přesun / natažení vodiče, dvojí klepnutí = vlastnosti, dlouhý stisk = zrušit nástroj,
-dva prsty = posun a přiblížení. Soubory `.cad` se otevírají a ukládají přes aplikaci Soubory, PNG se sdílí přes nabídku Sdílet.
+dva prsty = posun a přiblížení. Při dotyku se nad prstem zobrazí lupa se zaměřovačem, takže je vidět, kam se trefíte. Soubory `.cad` se otevírají a ukládají přes aplikaci Soubory, PNG se sdílí přes nabídku Sdílet.
 
 Nahrání do App Store / TestFlight: v Xcode vyberte v *Signing & Capabilities* svůj tým (případně změňte Bundle Identifier),
 cíl *Any iOS Device*, pak *Product → Archive → Distribute App*.
@@ -34,6 +42,7 @@ $JSC app/core.js app/real.js tools/route_test.js -- Priklady
 $JSC app/core.js app/real.js tools/demo_domov.js -- test
 $JSC app/core.js app/real.js tools/domov3f_test.js
 $JSC app/calc.js tools/calc_test.js
+$JSC app/core.js app/real.js tools/reroute_test.js -- Priklady
 ```
 
 Ukázková schémata ve složce `Priklady/` (kromě souborů „ElectroSchool – …“) pocházejí z repozitáře [ELECTROALL/CADE-SIMU](https://github.com/ELECTROALL/CADE-SIMU).
