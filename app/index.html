@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ElectroSchool</title>
+<meta name="description" content="ElectroSchool – simulátor elektrických schémat: schéma, realistické zapojení s barevnými vodiči, simulace a kalkulačky pro elektrikáře.">
+<meta name="theme-color" content="#1e1e20">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="bar">
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="schema" role="tab">Schéma</button>
+    <button class="tab" data-tab="real" role="tab">Realita</button>
+    <button class="tab" data-tab="calc" role="tab">Kalkulačky</button>
+  </div>
+  <div class="grp ed">
+    <button data-cmd="new" title="Nové schéma (⌘N)">Nový</button>
+    <button data-cmd="open" title="Otevřít .cad (⌘O)">Otevřít…</button>
+    <button data-cmd="save" title="Uložit (⌘S)">Uložit</button>
+    <select id="examples" title="Ukázková schémata"><option value="">Příklady…</option></select>
+  </div>
+  <div class="grp ed">
+    <button data-cmd="undo" title="Zpět (⌘Z)">↶</button>
+    <button data-cmd="redo" title="Znovu (⇧⌘Z)">↷</button>
+    <button data-cmd="rotate" title="Otočit (R)">⟳</button>
+    <button data-cmd="delete" title="Smazat (⌫)">✕</button>
+  </div>
+  <div class="grp ed">
+    <button data-cmd="zoomout" title="Oddálit">−</button>
+    <button data-cmd="fit" title="Zobrazit vše">Vše</button>
+    <button data-cmd="zoomin" title="Přiblížit">+</button>
+    <button data-cmd="png" title="Exportovat obrázek PNG">PNG</button>
+  </div>
+  <div class="grp rl">
+    <button data-cmd="rfrom" title="Natáhnout vodiče v realitě podle schématu">⇣ Zapojit podle schématu</button>
+    <button data-cmd="rto" title="Nakreslit vodiče schématu podle zapojení v realitě">⇡ Překreslit schéma</button>
+    <button data-cmd="rcmp" title="Najít rozdíly mezi zapojením v realitě a schématem">Porovnat</button>
+  </div>
+  <div class="grp right ed">
+    <span id="simmsg"></span>
+    <button id="simbtn" data-cmd="sim" class="primary" title="Spustit / zastavit simulaci (⌘R)">▶ Simulace</button>
+  </div>
+</header>
+<main>
+  <aside id="palette" class="pal"></aside>
+  <aside id="rpalette" class="pal"></aside>
+  <div id="stage"><canvas id="cv"></canvas></div>
+</main>
+<div id="calcview"></div>
+<footer id="status"><span id="hint"></span><span id="pos"></span></footer>
+
+<dialog id="dlg"><form method="dialog" id="dlgform"></form></dialog>
+<input type="file" id="file" accept=".cad,.CAD" hidden>
+
+<script src="core.js"></script>
+<script src="symbols.js"></script>
+<script src="real.js"></script>
+<script src="examples.js"></script>
+<script src="calc.js"></script>
+<script src="ui.js"></script>
+<script>
+  // offline režim webové verze (v aplikaci pro macOS se nepoužívá)
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.es))
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
