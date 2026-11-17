@@ -13,7 +13,7 @@ const WCOL = [
   ['#d62828', 'červená'], ['#1f3a93', 'tmavě modrá'], ['#f28c28', 'oranžová'], ['#f4f4f4', 'bílá'], ['#8e44ad', 'fialová'],
 ];
 const WNAME = Object.fromEntries(WCOL);
-function hexRgb(h) { h = String(h || '#000').replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const v = parseInt(h, 16) || 0; return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
+function hexRgb(h) { const m = /rgba?\(\s*(\d+)\D+(\d+)\D+(\d+)/.exec(String(h)); if (m) return [+m[1], +m[2], +m[3]]; h = String(h || '#000').replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const v = parseInt(h, 16) || 0; return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
 function shade(h, f) { const m = f < 0 ? 0 : 255, k = Math.abs(f); return 'rgb(' + hexRgb(h).map(v => Math.round(v + (m - v) * k)).join(',') + ')'; }
 function lum(h) { const [r, g, b] = hexRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; }
 const inkOn = h => lum(h) < 0.5 ? '#f2f2f2' : INK;
