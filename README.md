@@ -108,6 +108,10 @@ Stejné schéma zobrazené jako skutečné přístroje (jističe na DIN liště,
 - **Barvy přístrojů** jsou ve výchozím stavu černobílé; dvojklikem na přístroj nastavíte barvu těla a hmatníku/páčky (u signálky barvu světla).
 - **⇣ Zapojit podle schématu** natáhne vodiče podle schématu (L1 hnědá, L2 černá, L3 šedá, N modrá, PE zelenožlutá).
 - **⇡ Překreslit schéma** smaže vodiče schématu a nakreslí je znovu podle reality (automatické vedení kolmých vodičů, značky zůstanou na místě).
+- **Barvy vodičů podle normy:** aplikace určí funkci každého vodiče ze zapojení (L1/L2/L3, N, PE, řídicí obvod AC/DC – i spínaný vodič za spínačem má barvu své fáze) a obarví ho podle zvolené normy:
+  - *ČSN EN IEC 60445 / ČSN 33 2000-5-51 (instalace):* L1 hnědá, L2 černá, L3 šedá, N světle modrá, PE zelenožlutá.
+  - *ČSN EN 60204-1 (stroje, rozvaděče):* silové obvody černá, řídicí AC červená, řídicí DC tmavě modrá, N světle modrá, PE zelenožlutá.
+  Barva „A“ v paletě obarví nový vodič automaticky, **Přebarvit podle normy** opraví všechny, **Kontrola barev** označí vodiče se špatnou barvou (výuka). Najetím na vodič se zobrazí jeho funkce a správná barva.
 - **Porovnat** vypíše rozdíly mezi realitou a schématem a označí dotčené svorky červeně.
 - **Simulace v realitě** počítá jen s nataženými vodiči – zapomenutý vodič se projeví stejně jako ve skutečnosti. Najetím na svorku změříte napětí.
 - Realistické zapojení se ukládá do souboru .cad za jeho konec (původní CADe_SIMU ho ignoruje). GRAFCET v realitě zobrazen není a zůstává propojený podle schématu.

@@ -594,6 +594,8 @@ async function cmd(c) {
     case 'rfrom': rFromSchema(); return;
     case 'rto': rToSchema(); return;
     case 'rcmp': rCompare(); return;
+    case 'rnorm': rRecolor(); return;
+    case 'rchk': rColorCheck(); return;
   }
   switch (c) {
     case 'new': if (await confirmDiscard()) setDoc({ items: [], trailer: ES.DEFAULT_TRAILER, real: ES.emptyReal() }, 'Bez názvu.cad'); view.s = 4; view.ox = 40; view.oy = 40; render(); break;
@@ -673,7 +675,8 @@ function buildPalette() {
 const R = ES.Real;
 const rview = { s: 2.4, ox: 40, oy: 40, fitted: false };
 let mode = 'schema', rtool = { kind: 'select' }, rsel = new Set(), rwsel = -1, rdraft = null, rdrag = null, rhover = null, rcmp = null, rsc = null;
-let wcol = '#1b1b1b';
+let wcol = 'auto', rbad = null;
+let wnorm = (() => { try { return localStorage.getItem('es.wnorm') || '60445'; } catch (e) { return '60445'; } })();
 const rmouse = { x: 0, y: 0, in: false };
 const RHINT = {
   select: 'Realita: tažením ze svorky na svorku natáhnete vodič (klikáním do prázdna lomíte). Přístroj přesunete tažením, dvojklik = vlastnosti a barva, ⌫ = smazat. Barvu vodiče zvolíte v paletě.',
@@ -708,13 +711,13 @@ function renderReal() {
     const x0 = Math.floor(-rview.ox / rview.s / 10) * 10, y0 = Math.floor(-rview.oy / rview.s / 10) * 10, x1 = (W - rview.ox) / rview.s, y1 = (H - rview.oy) / rview.s, r = 0.5;
     ctx.fillStyle = '#b9bdc4'; for (let x = x0; x <= x1; x += 10) for (let y = y0; y <= y1; y += 10) ctx.fillRect(x - r / 2, y - r / 2, r, r);
   }
-  R.drawScene(ctx, doc, sc, { sim, sel: rsel, wsel: rwsel, fast: !!(rdrag && rdrag.kind === 'move' && rdrag.moved) });
+  R.drawScene(ctx, doc, sc, { sim, sel: rsel, wsel: rwsel, wbad: rbad, fast: !!(rdrag && rdrag.kind === 'move' && rdrag.moved) });
   if (rcmp) for (const k of rcmp) { const t = sc.T.get(k); if (t) { ctx.strokeStyle = '#e53935'; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.arc(t.x, t.y, 4.6, 0, 7); ctx.stroke(); } }
   const ht = rhover && rhover.term;
   if (!sim && (rdraft || rtool.kind === 'wire')) for (const t of sc.T.values()) { ctx.strokeStyle = 'rgba(10,102,232,.45)'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.arc(t.x, t.y, 3.9, 0, 7); ctx.stroke(); }
   if (ht) { ctx.strokeStyle = '#0a66e8'; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.arc(ht.x, ht.y, 4.2, 0, 7); ctx.stroke(); }
   if (rdraft && !sim) {
-    const from = sc.T.get(rdraft.from.key); if (from) { const B = ht && ht.key !== from.key ? ht : { x: rmouse.x, y: rmouse.y }; ctx.globalAlpha = 0.8; R.drawWire(ctx, R.wirePts(from, B, rdraft.p), wcol, false); ctx.globalAlpha = 1; }
+    const from = sc.T.get(rdraft.from.key); if (from) { const B = ht && ht.key !== from.key ? ht : { x: rmouse.x, y: rmouse.y }; ctx.globalAlpha = 0.8; R.drawWire(ctx, R.wirePts(from, B, rdraft.p), wcol === 'auto' ? '#9a9a9a' : wcol, false); ctx.globalAlpha = 1; }
   }
   if (rtool.kind === 'place' && rmouse.in && !sim) {
     const g = R.presetDevice(rtool.types, ''); g.x = rmouse.x - g.w / 2; g.y = rmouse.y - g.h / 2; ctx.globalAlpha = 0.55; R.drawDevice(ctx, g, { icon: true }); ctx.globalAlpha = 1;
@@ -776,6 +779,7 @@ function rMove(e) {
   if (e.target === cv && !rdrag) {
     const h = rHit(x, y, !!sim); rhover = h;
     if (sim) { const g = h && (h.dev || (h.term && h.term.g)); cv.style.cursor = g && pressTarget(g) ? 'pointer' : 'default'; }
+    else if (!rdraft && rtool.kind === 'select' && h && h.wire !== undefined) { const w = doc.real.wires[h.wire], [c, why] = R.normColor(doc, w, wnorm); hint('Vodič ' + (R.WNAME[w.c] || w.c) + ' – ' + why + (c === w.c ? ' ✓ odpovídá ' : ' ✗ podle ') + R.NORMS[wnorm].short + (c === w.c ? '' : ' má být ' + (R.WNAME[c] || c)) + '. Dvojklik = změnit barvu.'); }
     else if (!rdraft && rtool.kind === 'select') hint(h && h.term ? 'Svorka ' + R.termName(h.term) + ' – tažením natáhnete vodič.' : h && h.dev ? (h.dev.name ? h.dev.name + ' – ' : '') + ES.getDef(h.dev.main.type).name + (h.dev.items.length > 1 ? ' (' + h.dev.items.length + ' prvky schématu)' : '') + '. Dvojklik = vlastnosti.' : RHINT.select);
   }
   if (!sim || rdrag) render();
@@ -794,7 +798,9 @@ function rUp(e) {
 function rFinish(t) {
   const f = rdraft.from, p = rdraft.p; rdraft = null;
   if (t.key === f.key) return;
-  pushUndo(); doc.real.wires.push({ a: [f.it.uid, f.ti], b: [t.it.uid, t.ti], c: wcol, p });
+  pushUndo(); const w = { a: [f.it.uid, f.ti], b: [t.it.uid, t.ti], c: wcol, p }; doc.real.wires.push(w);
+  if (wcol === 'auto') { const [c, why] = R.normColor(doc, w, wnorm); w.c = c; hint('Vodič: ' + why + ' → ' + (R.WNAME[c] || c) + ' (' + R.NORMS[wnorm].short + ')'); }
+  rbad = null;
   rcmp = null; touch();
 }
 function rKey(e, k, mod) {
@@ -869,7 +875,8 @@ async function rEditDevice(g) {
 }
 async function rEditWire(i) {
   const w = doc.real.wires[i]; rwsel = i; render();
-  let h = '<h2>Vodič</h2><label>Barva<select name="c">' + R.WCOL.map(o => '<option value="' + o[0] + '"' + (o[0] === w.c ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>';
+  const [nc, nwhy] = R.normColor(doc, w, wnorm);
+  let h = '<h2>Vodič</h2><p>' + esc(nwhy) + ' – podle ' + esc(R.NORMS[wnorm].short) + ' má být <b>' + esc(R.WNAME[nc] || nc) + '</b>.</p><label>Barva<select name="c">' + R.WCOL.map(o => '<option value="' + o[0] + '"' + (o[0] === w.c ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>';
   if (w.p && w.p.length) h += '<label>Lomové body<span><input type="checkbox" name="clr" style="width:auto"> zrušit (' + w.p.length + ')</span></label>';
   const r = await ask(h, [['del', 'Smazat vodič'], ['no', 'Zrušit'], ['ok', 'OK']]);
   if (r === 'del') { rwsel = i; rDelete(); return; }
@@ -894,11 +901,28 @@ function rProbe() {
   return '';
 }
 const wlabel = c => R.WNAME[c] || c;
+async function rRecolor() {
+  if (sim || !doc.real.wires.length) return;
+  const bad = R.colorCheck(doc, wnorm);
+  if (!bad.length) { hint('Všechny vodiče už mají barvu podle ' + R.NORMS[wnorm].short + '.'); return; }
+  if ((await ask('<h2>Přebarvit podle normy</h2><p>Podle normy <b>' + esc(R.NORMS[wnorm].name) + '</b> se změní barva ' + bad.length + ' z ' + doc.real.wires.length + ' vodičů. Funkce každého vodiče (L1, L2, L3, N, PE, řídicí obvod…) se určí ze zapojení.</p>', [['no', 'Zrušit'], ['ok', 'Přebarvit']])) !== 'ok') return;
+  pushUndo(); for (const b of bad) doc.real.wires[b.i].c = b.want; rbad = null; touch(); render();
+  hint('Přebarveno ' + bad.length + ' vodičů podle ' + R.NORMS[wnorm].short + '.');
+}
+async function rColorCheck() {
+  const bad = R.colorCheck(doc, wnorm), sc = rScene();
+  rbad = bad.length ? new Set(bad.map(b => b.i)) : null; render();
+  if (!bad.length) { await ask('<h2>Kontrola barev vodičů</h2><p>Všech ' + doc.real.wires.length + ' vodičů má barvu podle normy <b>' + esc(R.NORMS[wnorm].name) + '</b>. ✔︎</p>', [['ok', 'OK']]); return; }
+  const tn = k => { const t = sc.T.get(k); return t ? R.termName(t) : '?'; };
+  const r = await ask('<h2>Kontrola barev vodičů</h2><p>Podle <b>' + esc(R.NORMS[wnorm].name) + '</b> má špatnou barvu ' + bad.length + ' z ' + doc.real.wires.length + ' vodičů (v realitě označené červeně):</p><p style="color:var(--text);max-height:240px;overflow:auto;font-size:12px">' +
+    bad.slice(0, 40).map(b => { const w = doc.real.wires[b.i]; return esc(tn(w.a.join(':')) + ' – ' + tn(w.b.join(':'))) + ': ' + esc(wlabel(w.c)) + ' → <b>' + esc(wlabel(b.want)) + '</b> (' + esc(b.why) + ')'; }).join('<br>') + '</p>', [['ok', 'Zavřít'], ['fix', 'Opravit barvy']]);
+  if (r === 'fix') { pushUndo(); for (const b of bad) doc.real.wires[b.i].c = b.want; rbad = null; touch(); render(); }
+}
 async function rFromSchema() {
   if (sim) return;
   const n = doc.real.wires.length;
-  if (n && (await ask('<h2>Zapojit podle schématu</h2><p>V realitě je už natažených ' + n + ' vodičů. Nahradit je zapojením ze schématu? Barvy se určí podle potenciálu (L1 hnědá, L2 černá, L3 šedá, N modrá, PE zelenožlutá).</p>', [['no', 'Zrušit'], ['ok', 'Nahradit']])) !== 'ok') return;
-  pushUndo(); doc.real.wires = R.wiresFromSchema(doc); rcmp = null; touch(); render();
+  if (n && (await ask('<h2>Zapojit podle schématu</h2><p>V realitě je už natažených ' + n + ' vodičů. Nahradit je zapojením ze schématu? Barvy se určí podle zvolené normy (' + esc(R.NORMS[wnorm].short) + ').</p>', [['no', 'Zrušit'], ['ok', 'Nahradit']])) !== 'ok') return;
+  pushUndo(); doc.real.wires = R.wiresFromSchema(doc); { const f = R.wireFunc(doc); for (const w of doc.real.wires) w.c = R.normColor(doc, w, wnorm, f)[0]; } rcmp = null; rbad = null; touch(); render();
   hint('Nataženo ' + doc.real.wires.length + ' vodičů podle schématu.');
 }
 async function rToSchema() {
@@ -935,13 +959,14 @@ function buildRealPalette() {
   const tb = (box, title, t, content) => { const b = document.createElement('button'); b.className = 'tool'; b.title = title; b._rt = t; if (typeof content === 'string') { b.classList.add('text'); b.textContent = content; } else b.append(content); b.onclick = () => rSetTool(Object.assign({}, t)); box.append(b); return b; };
   tb(t0, 'Výběr a přesun (Esc)', { kind: 'select' }, '↖︎');
   const wc = document.createElement('canvas'); wc.width = wc.height = 96;
-  const drawW = () => { const c = wc.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, 96, 96); c.scale(4, 4); R.drawWire(c, R.wirePts({ x: 4, y: 19, dir: [0, -1] }, { x: 20, y: 5, dir: [0, 1] }), wcol, false); };
+  const drawW = () => { const c = wc.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, 96, 96); c.scale(4, 4); R.drawWire(c, R.wirePts({ x: 4, y: 19, dir: [0, -1] }, { x: 20, y: 5, dir: [0, 1] }), wcol === 'auto' ? '#7a4a22' : wcol, false); };
   drawW(); tb(t0, 'Vodič (W)', { kind: 'wire', name: 'wire' }, wc);
-  const sw = section('Barva vodiče', 'ČSN EN 60445 · ČSN 33 2000-5-51');
-  for (const [c, n] of R.WCOL) {
-    const b = document.createElement('button'); b.className = 'swatch' + (c === wcol ? ' active' : ''); b.title = n;
-    b.style.background = c === 'gnye' ? 'repeating-linear-gradient(45deg,#2f9e44 0 6px,#f3d21c 6px 12px)' : c;
-    b.onclick = () => { wcol = c; pal.querySelectorAll('.swatch').forEach(x => x.classList.toggle('active', x === b)); drawW(); if (rwsel >= 0 && !sim) { pushUndo(); doc.real.wires[rwsel].c = c; touch(); render(); } else if (rtool.kind !== 'wire') rSetTool({ kind: 'wire', name: 'wire' }); };
+  const sw = section('Barva vodiče', 'A = automaticky podle normy');
+  for (const [c, n] of [['auto', 'Auto – barva podle normy a zapojení'], ...R.WCOL]) {
+    const b = document.createElement('button'); b.className = 'swatch' + (c === wcol ? ' active' : '') + (c === 'auto' ? ' auto' : ''); b.title = n;
+    if (c === 'auto') b.textContent = 'A';
+    b.style.background = c === 'auto' ? 'conic-gradient(#7a4a22 0 20%, #1b1b1b 0 40%, #8d8d8d 0 60%, #2f80ed 0 80%, #2f9e44 0)' : c === 'gnye' ? 'repeating-linear-gradient(45deg,#2f9e44 0 6px,#f3d21c 6px 12px)' : c;
+    b.onclick = () => { wcol = c; pal.querySelectorAll('.swatch').forEach(x => x.classList.toggle('active', x === b)); drawW(); if (rwsel >= 0 && !sim) { pushUndo(); const w = doc.real.wires[rwsel]; w.c = c === 'auto' ? R.normColor(doc, w, wnorm)[0] : c; rbad = null; touch(); render(); } else if (rtool.kind !== 'wire') rSetTool({ kind: 'wire', name: 'wire' }); };
     sw.append(b);
   }
   for (const [cat, list, set, norm] of R.PRESETS) {
@@ -977,6 +1002,7 @@ function setTab(t) {
 }
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => { setTab(b.dataset.tab); b.blur(); }));
 buildPalette(); buildRealPalette(); setTool({ kind: 'select' }); title();
+{ const ns = $('#wnorm'); if (ns) { ns.innerHTML = Object.entries(R.NORMS).map(([k, v]) => '<option value="' + k + '"' + (k === wnorm ? ' selected' : '') + '>' + esc(v.name) + '</option>').join(''); ns.onchange = () => { wnorm = ns.value; try { localStorage.setItem('es.wnorm', wnorm); } catch (e) {} rbad = null; render(); hint('Norma barev vodičů: ' + R.NORMS[wnorm].name + '. Nové vodiče s barvou „A“ se obarví podle ní; stávající přebarvíte tlačítkem.'); ns.blur(); }; } }
 new ResizeObserver(render).observe(stage);
 window.addEventListener('beforeunload', e => { if (dirty && !native) { e.preventDefault(); e.returnValue = ''; } });
 if (native) native.postMessage({ cmd: 'ready' });

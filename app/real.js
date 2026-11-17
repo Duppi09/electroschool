@@ -9,7 +9,7 @@ const ES = root.ES;
 // ---------------------------------------------------------------- barvy
 const INK = '#1d1d1f', BODY = '#f5f5f3', DARK = '#2b2b2e', METAL = '#c9ccd2';
 const WCOL = [
-  ['#7a4a22', 'hnědá (L1)'], ['#1b1b1b', 'černá (L2)'], ['#8d8d8d', 'šedá (L3)'], ['#2f80ed', 'světle modrá (N)'], ['gnye', 'zelenožlutá (PE)'],
+  ['#7a4a22', 'hnědá'], ['#1b1b1b', 'černá'], ['#8d8d8d', 'šedá'], ['#2f80ed', 'světle modrá'], ['gnye', 'zelenožlutá'],
   ['#d62828', 'červená'], ['#1f3a93', 'tmavě modrá'], ['#f28c28', 'oranžová'], ['#f4f4f4', 'bílá'], ['#8e44ad', 'fialová'],
 ];
 const WNAME = Object.fromEntries(WCOL);
@@ -718,7 +718,9 @@ function drawScene(c, doc, sc, opt) {
     const A = sc.T.get(w.a[0] + ':' + w.a[1]), B = sc.T.get(w.b[0] + ':' + w.b[1]); if (!A || !B) return;
     let live = false;
     if (sim && opt.showLive) { const net = sim.nets.ofKey.get(A.key); live = net !== undefined && !!sim.netPot[net]; }
-    drawWire(c, (RT && RT[i]) || wirePts(A, B, w.p), w.c || '#1b1b1b', opt.wsel === i, live);
+    const pts = (RT && RT[i]) || wirePts(A, B, w.p);
+    if (opt.wbad && opt.wbad.has(i)) { c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = 'rgba(229,57,53,.55)'; c.lineWidth = 5; c.setLineDash([3, 2]); strokePath(c, pts); c.setLineDash([]); }
+    drawWire(c, pts, w.c || '#1b1b1b', opt.wsel === i, live);
   });
 }
 
@@ -925,5 +927,69 @@ function presetDevice(types, name) {
   return g;
 }
 
-ES.Real = { WCOL, WNAME, PRESETS, devices, famOf, layout, scene, wirePts, routes, drawWire, drawDevice, drawScene, stateOf, termName, wiresFromSchema, compare, schemaFromReal, placeInSchema, presetDevice, isReal, colorFor };
+
+// ---------------------------------------------------------------- barvy vodičů podle normy
+// Funkce vodiče se určí z realistického zapojení: síť se „protáhne“ přes všechny póly
+// (vypínače, jističe, kontakty – jako by byly sepnuté), takže i spínaný vodič za spínačem
+// má barvu fáze, ze které je napájen. Podle zvolené normy se pak přiřadí barva.
+const NORMS = {
+  '60445': { name: 'ČSN EN IEC 60445 / ČSN 33 2000-5-51 (instalace)', short: 'ČSN EN IEC 60445' },
+  '60204': { name: 'ČSN EN 60204-1 (stroje, rozvaděče)', short: 'ČSN EN 60204-1' },
+};
+const POWER_KINDS = new Set(['supply', 'contactor', 'motor3', 'motorYD', 'motor1', 'thermal', 'mstarter', 'rcd', 'emeter', 'emeter3', 'socket3', 'load3', 'mswitch']);
+const CONTROL_KINDS = new Set(['load', 'contact', 'hsw', 'meter']);
+function wireFunc(doc) {
+  const rn = ES.buildRealNets(doc), n = rn.count, par = Int32Array.from({ length: n }, (_, i) => i);
+  const find = i => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+  const bits = new Int32Array(n), power = new Uint8Array(n), control = new Uint8Array(n), peT = new Uint8Array(n), nT = new Uint8Array(n);
+  const comps = [];
+  for (const it of doc.items) { const d = ES.getDef(it.type); if (!d.terms || !d.terms.length || !ES.REAL_KINDS.has(d.kind)) continue; comps.push([it, d, d.terms.map((_, i) => rn.ofKey.get(it.uid + ':' + i))]); }
+  for (const [it, d, tn] of comps) {
+    tn.forEach((t, i) => {
+      if (t === undefined) return;
+      const lab = String(it.t[2 + i] || (d.labels || [])[i] || '');
+      if (lab === 'PE') peT[t] = 1; else if (/^N′?$/.test(lab) && d.kind !== 'load') nT[t] = 1;
+      if (d.kind === 'supply') { bits[t] |= ES.POT[d.pots[i]]; return; }
+      if (POWER_KINDS.has(d.kind) || ((d.kind === 'breaker' || d.kind === 'fuse') && (d.n || 1) >= 3)) power[t] = 1;
+      else if (CONTROL_KINDS.has(d.kind)) control[t] = 1;
+    });
+    if (d.kind === 'trafo') { bits[tn[2]] |= 256; bits[tn[3]] |= 512; }
+  }
+  const own = { bits: Int32Array.from(bits) };
+  for (const [, d, tn] of comps) for (const p of d.poles || []) { const a = find(tn[p.a]), b = find(tn[p.b]); if (a !== b) par[a] = b; }
+  const gb = new Int32Array(n); for (let i = 0; i < n; i++) gb[find(i)] |= bits[i];
+  return { rn, net: k => rn.ofKey.get(k), info: t => ({ bits: gb[find(t)], own: own.bits[t], power: !!power[t], control: !!control[t], pe: !!peT[t], n: !!nT[t] }) };
+}
+const C = { br: '#7a4a22', bk: '#1b1b1b', gy: '#8d8d8d', lb: '#2f80ed', pe: 'gnye', rd: '#d62828', db: '#1f3a93', or: '#f28c28' };
+function normColorOf(f, t, std) {
+  const x = f.info(t), b = x.bits;
+  if (b & 16 || x.pe) return [C.pe, 'ochranný vodič PE'];
+  if (b & 8 || x.n) return [C.lb, 'střední (nulový) vodič N'];
+  const phases = [1, 2, 4].filter(p => b & p);
+  if (std === '60204') {
+    if (b & 64 && !(b & 39)) return [C.db, 'řídicí obvod DC, záporný pól (L−)'];
+    if (b & 32 && !(b & 7)) return [C.db, 'řídicí obvod DC (L+)'];
+    if (b & 512 && !(b & 256)) return [C.rd, 'řídicí obvod AC – společný vodič sekundáru'];
+    if (b & 256) return [C.rd, 'řídicí obvod AC (sekundár transformátoru)'];
+    if (phases.length && x.control && !x.power) return [C.rd, 'řídicí obvod AC (' + phases.map(p => ES.POT_NAME[p]).join('+') + ')'];
+    if (phases.length) return [C.bk, 'silový obvod AC (' + phases.map(p => ES.POT_NAME[p]).join('+') + ')'];
+    return [C.bk, 'vodič bez přímého napájení (mezi spotřebiči)'];
+  }
+  if (phases.length === 1) return [[C.br, C.bk, C.gy][[1, 2, 4].indexOf(phases[0])], 'fázový vodič ' + ES.POT_NAME[phases[0]]];
+  if (phases.length > 1) return [C.bk, 'fázový vodič (' + phases.map(p => ES.POT_NAME[p]).join('+') + ' – zkrat?)'];
+  if (b & 32) return [C.rd, 'stejnosměrný L+ (norma pro instalace barvu nestanoví – zvolena červená)'];
+  if (b & 64) return [C.db, 'stejnosměrný L− (zvolena tmavě modrá)'];
+  if (b & 256) return [C.rd, 'sekundár transformátoru SELV (norma barvu nestanoví – zvolena červená)'];
+  if (b & 512) return [C.lb, 'společný vodič sekundáru (zvolena světle modrá)'];
+  return [C.bk, 'vodič bez přímého napájení (mezi spotřebiči)'];
+}
+// barva pro vodič w podle normy; vrací [barva, popis funkce]
+function normColor(doc, w, std, f) { f = f || wireFunc(doc); const t = f.net(w.a[0] + ':' + w.a[1]); return t === undefined ? [C.bk, ''] : normColorOf(f, t, std); }
+function colorCheck(doc, std) {
+  const f = wireFunc(doc), bad = [];
+  doc.real.wires.forEach((w, i) => { const [c, why] = normColor(doc, w, std, f); if (c !== w.c) bad.push({ i, want: c, why }); });
+  return bad;
+}
+
+ES.Real = { NORMS, normColor, colorCheck, wireFunc, WCOL, WNAME, PRESETS, devices, famOf, layout, scene, wirePts, routes, drawWire, drawDevice, drawScene, stateOf, termName, wiresFromSchema, compare, schemaFromReal, placeInSchema, presetDevice, isReal, colorFor };
 })(typeof window !== 'undefined' ? window : globalThis);

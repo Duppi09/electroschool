@@ -25,6 +25,7 @@ W(F2, '2', XS, 'L', BR); W(XN, '3', XS, 'N', BL); W(XPE, '3', XS, 'PE', GY);
 // impulsní relé ovládané dvěma tlačítky
 W(F1, '2', B1, 'L', BR); W(B1, 'L', B2, 'L', BR); W(B1, '1', K1, 'A1', BK); W(B2, '1', K1, 'A1', BK); W(XN, '4', K1, 'A2', BL);
 W(F1, '2', K1c, '13', BR); W(K1c, '14', E2, 'L', BK); W(XN, '5', E2, 'N', BL); W(XPE, '4', E2, 'PE', GY);
+{ const f = R.wireFunc(doc); for (const w of doc.real.wires) w.c = R.normColor(doc, w, '60445', f)[0]; } // barvy podle ČSN EN IEC 60445
 const res = R.schemaFromReal(doc);
 if (!TEST) { print(ES.serializeCad(doc)); } else {
   let fails = 0; const ok = (c, m) => { if (!c) { fails++; print('FAIL: ' + m); } else print('ok: ' + m); };

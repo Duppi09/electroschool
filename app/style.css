@@ -96,3 +96,5 @@ body.calc .grp.rl { display: none; }
 .calcsec { max-width: 1500px; margin: 18px auto 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
 .fields label:has(select) { grid-template-columns: 1fr 220px; }
 .fields label:has(select) select { grid-column: 2; }
+.pal .swatch.auto { color: #fff; font-weight: 800; font-size: 13px; text-shadow: 0 0 3px #000; }
+#wnorm { max-width: 260px; }
