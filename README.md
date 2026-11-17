@@ -2,7 +2,7 @@
 
 Simulátor elektrických schémat pro výuku i praxi: **schéma** podle ČSN EN 60617, **realistické zapojení** přístrojů barevnými vodiči, **simulace** (proudy, napětí, motory, ochrany) a **kalkulačky** pro elektrikáře. Čte a ukládá soubory `.cad` programu CADe_SIMU.
 
-- **Webová verze:** stačí otevřít v prohlížeči (Chrome, Edge, Safari, Firefox) – viz složka `docs/` (GitHub Pages). V Chrome a Edge se ukládá přímo do souboru (další ⌘S / Ctrl+S přepíše tentýž soubor), v ostatních prohlížečích se soubor stáhne. Funguje i offline a dá se nainstalovat jako aplikace.
+- **Webová verze:** https://duppi09.github.io/electroschool/ – stačí otevřít v prohlížeči (Chrome, Edge, Safari, Firefox) – viz složka `docs/` (GitHub Pages). V Chrome a Edge se ukládá přímo do souboru (další ⌘S / Ctrl+S přepíše tentýž soubor), v ostatních prohlížečích se soubor stáhne. Funguje i offline a dá se nainstalovat jako aplikace.
 - **Aplikace pro macOS:** `./build.sh` → `build/ElectroSchool.app`.
 
 Obě verze sdílejí tentýž kód ve složce `app/`.
