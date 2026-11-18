@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 python3 tools/gen_examples.py
 rm -rf docs && mkdir -p docs
-cp app/index.html app/style.css app/core.js app/symbols.js app/real.js app/calc.js app/ui.js app/examples.js docs/
+cp app/index.html app/style.css app/core.js app/symbols.js app/elec.js app/real.js app/calc.js app/ui.js app/examples.js docs/
 # ikony (vykreslí mac/icon.swift; bez Swiftu se použijí uložené)
 if command -v swift >/dev/null 2>&1; then
   swift mac/icon.swift web/icon-1024.png >/dev/null 2>&1 || true

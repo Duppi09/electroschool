@@ -16,7 +16,7 @@ const LIB = {};
 const CATS = [];
 function def(code, d) {
   d.code = code; LIB[code] = d;
-  if (d.cat) { let c = CATS.find(c => c.name === d.cat); if (!c) CATS.push(c = { name: d.cat, items: [], set: d.home ? 'home' : 'ind', norm: d.norm || '' }); c.items.push(code); }
+  if (d.cat) { let c = CATS.find(c => c.name === d.cat); if (!c) CATS.push(c = { name: d.cat, items: [], set: d.set || (d.home ? 'home' : 'ind'), norm: d.norm || '' }); c.items.push(code); }
   return d;
 }
 function tb(n, h, dx) { const a = []; dx = dx || 6; for (let i = 0; i < n; i++) a.push([i * dx, 0]); for (let i = 0; i < n; i++) a.push([i * dx, h]); return a; }
@@ -387,6 +387,7 @@ function simStart(doc, real) {
     if (d.kind === 'cyl') st.cyl[it.uid] = 0;
     if (d.kind === 'trafo' && st.trafos.length < 20) st.trafos.push({ c: st.comps[st.comps.length - 1], bit: 128 << st.trafos.length });
   }
+  if (root.ES && root.ES.Elec) st.elec = root.ES.Elec.start(st); // elektronika: vlastní stejnosměrný výpočet
   simStep(st, 0);
   return st;
 }
@@ -637,6 +638,7 @@ function simStep(st, dt) {
   }
   st.coil = coil;
   grafcet(st, dt);
+  if (st.elec) root.ES.Elec.step(st, dt);
 }
 
 // ---- měřicí přístroje, tepelná ochrana, proudový chránič, transformátor
@@ -766,6 +768,7 @@ function grafcet(st, dt) {
 function simPress(st, it, down, latch, part) {
   const c = st.comps.find(c => c.it === it); if (!c) return false;
   const d = c.d;
+  if (d.kind === 'el') return root.ES.Elec ? root.ES.Elec.press(st, c, down, latch, part) : false;
   if (d.kind === 'hsw') { if (down) { const m = st.sw[it.uid] | 0; st.sw[it.uid] = d.bits === 2 ? (part === 0 || part === 1 ? m ^ (1 << part) : (m + 1) & 3) : m ^ 1; } return true; }
   if (d.kind === 'socket' || d.kind === 'socket3' || d.kind === 'load3') { if (down) st.plug[it.uid] = !st.plug[it.uid]; return true; }
   if (d.click === 'clock') return true;
@@ -785,6 +788,6 @@ function simPress(st, it, down, latch, part) {
   return false;
 }
 
-root.ES = { LIB, CATS, POT, POT_NAME, WIRE, NODE, getDef, norm, rot, parseCad, serializeCad, newItem, cloneItem, termsOf, bboxOf,
+root.ES = { def, LIB, CATS, POT, POT_NAME, WIRE, NODE, getDef, norm, rot, parseCad, serializeCad, newItem, cloneItem, termsOf, bboxOf,
   buildNets, buildRealNets, splitAtTerms, emptyReal, REAL_KINDS, junctions, onSeg, PHASOR, netVoltage, potNames, shorted, TZ, simStart, simStep, simPress, isActuated, keyOf, secondsOf, DEFAULT_TRAILER };
 })(typeof window !== 'undefined' ? window : globalThis);

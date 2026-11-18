@@ -115,3 +115,26 @@ body.ios #status { padding-bottom: max(4px, env(safe-area-inset-bottom)); }
 @media (pointer: coarse) { button[data-cmd="undo"], button[data-cmd="redo"], button[data-cmd="rotate"], button[data-cmd="delete"] { font-size: 18px; min-width: 42px; padding: 0 8px; } }
 body.real .grp.sc, body.calc .grp.sc { display: none; }
 #autort.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* nástroje v horní liště */
+.grp.tl { gap: 3px; }
+#tbr, body.real #tbs, body.calc .grp.tl { display: none; }
+body.real #tbr { display: flex; }
+.tbt { min-width: 32px; height: 30px; padding: 0 5px; display: grid; place-items: center; font-size: 16px; }
+.tbt canvas { width: 24px; height: 24px; display: block; }
+.tbt.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); background: var(--panel); }
+.tbt.last { margin-left: 6px; }
+.tbt.last.empty { opacity: .55; }
+@media (prefers-color-scheme: dark) { .tbt canvas { background: #e9e9ee; border-radius: 4px; } }
+@media (pointer: coarse) { .tbt { min-width: 40px; height: 36px; } .tbt canvas { width: 28px; height: 28px; } }
+/* hlavička palety: sady + hledání (zůstává nahoře) */
+.palhead { position: sticky; top: -6px; z-index: 3; background: var(--panel); margin: -6px -6px 4px; padding: 6px 6px 6px; border-bottom: 1px solid var(--line); }
+.setpick { flex-wrap: wrap; }
+.setpick button { flex: 1 1 auto; }
+.palsearch { font: inherit; width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--text); }
+@media (pointer: coarse) { .palsearch { font-size: 16px; padding: 7px 9px; } }
+.palnote { color: var(--muted); font-size: 12px; line-height: 1.4; margin: 10px 4px; }
+/* editor programu Arduina */
+dialog:has(textarea.code) { max-width: min(860px, 94vw); width: 860px; }
+textarea.code { width: 100%; height: 340px; font: 12px/1.45 Menlo, Monaco, monospace; tab-size: 2; white-space: pre; resize: vertical; margin-top: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: var(--bg); color: var(--text); }
+@media (pointer: coarse) { textarea.code { font-size: 14px; height: 300px; } }

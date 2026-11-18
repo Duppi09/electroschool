@@ -349,7 +349,8 @@ function drawItem(c, it, opt) {
     let col = it.type === 4009 ? '#1e6fd9' : it.type === 4010 ? '#2e9e3e' : it.type === 10106 ? INK : WIRE_IDLE, w = 0.34;
     if (sim && it.type !== 10106) { const net = sim.nets.ofKey.get(n[8] + ',' + n[9]); const p = net === undefined ? 0 : sim.netPot[net]; col = potColor(p, Math.floor(sim.t * 4) % 2 === 0); w = p ? 0.62 : 0.3;
       if (it.type === 4010 && p && !ES.shorted(p) && !(p & ~(8 | 16 | 64 | ES.TZ))) col = POT_COLOR[16]; // ochranný vodič zůstává zelený
-      if (!p && net !== undefined) { const v = ES.netVoltage(sim, net); if (v && Math.hypot(v[0], v[1]) > 20) { col = viaColor(v); w = 0.45; } } }
+      if (!p && net !== undefined) { const v = ES.netVoltage(sim, net); if (v && Math.hypot(v[0], v[1]) > 20) { col = viaColor(v); w = 0.45; } }
+      if (!p && sim.elec && ES.Elec) { const e = ES.Elec.wireStyle(sim, net); if (e) { col = e[0]; w = e[1]; } } }
     if (opt.selected) col = '#0a66e8';
     c.strokeStyle = col; c.lineWidth = w;
     if (it.type === 4010 && !sim) { c.save(); c.setLineDash([2.2, 0.8, 0.5, 0.8]); line(c, n[8], n[9], n[10], n[11]); c.restore(); } else line(c, n[8], n[9], n[10], n[11]);
@@ -381,7 +382,7 @@ function drawItem(c, it, opt) {
   const T = [], S = stateFor(it, d, sim);
   c.save(); c.translate(n[8], n[9]); c.rotate((n[17] & 3) * Math.PI / 2);
   if (opt.ghost) c.globalAlpha = 0.55;
-  SYM[d.sym](c, it, d, S, T);
+  if (d.draw) { if (sim && sim.elec) S.r = sim.elec.res[it.uid]; d.draw(c, it, d, S, T, sim); } else SYM[d.sym](c, it, d, S, T);
   c.restore();
   // popisky svorek
   if (d.kind !== 'supply') (d.terms || []).forEach((p, i) => {

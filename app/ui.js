@@ -214,6 +214,7 @@ function toWorld(e) { const r = cv.getBoundingClientRect(); return [(e.clientX -
 // ------------------------------------------------------------ úpravy
 function autoName(d) {
   const lastOf = f => { for (let i = doc.items.length - 1; i >= 0; i--) { const k = ES.getDef(doc.items[i].type); if (f(k) && doc.items[i].t[0]) return doc.items[i].t[0]; } return null; };
+  if (d.kind === 'el') return d.pre ? nextFree(d.pre) : '';
   if (d.noAuto) { if (d.kind === 'stage') return String(doc.items.filter(i => ES.getDef(i.type).kind === 'stage').length); return d.pre || ''; }
   if (d.kind === 'supply') return '-X';
   // Pomocný kontakt nemá vlastní pohon, patří k poslední vložené cívce. Stykač dostane
@@ -405,6 +406,18 @@ async function editProps(it) {
   else if (d.kind === 'text') { h += '<label>Text<input name="extra" value="' + esc(it.extra) + '" autofocus></label>' + f('Velikost', 'size', Math.max(2, Math.abs(n[11] - n[9]) || 4), 'type="number" min="2" max="60" step="1"'); }
   else if (d.kind === 'gfx') h += f('Barva', 'color', '#' + [n[16] & 255, (n[16] >> 8) & 255, (n[16] >> 16) & 255].map(v => v.toString(16).padStart(2, '0')).join(''), 'type="color"') + f('Tloušťka', 'lw', n[18] || 0, 'type="number" min="0" max="8"');
   else if (d.kind === 'node' || d.kind === 'unknown') h += '<p>Tento prvek nemá upravitelné vlastnosti.</p>';
+  else if (d.kind === 'el') {
+    if (d.pre) h += f('Označení', 't0', it.t[0], 'autofocus');
+    for (const [i, label, def] of d.params || []) {
+      if (def === 'sketch') h += '<label>Ukázka<select id="skx"><option value="">Vložit ukázkový program…</option>' + Object.entries(ES.Elec.SKETCHES).map(([k, v]) => '<option value="' + k + '">' + esc(v[0]) + '</option>').join('') + '</select></label><textarea name="sketch" class="code" spellcheck="false" autocapitalize="off" autocorrect="off">' + esc(ES.Elec.sketchOf(it)) + '</textarea>' +
+        '<p>Zjednodušený jazyk Arduino: <b>setup()</b>, <b>loop()</b>, pinMode, digitalWrite / digitalRead, analogRead / analogWrite (PWM), delay, millis, map, Serial.print / println, proměnné, pole, if / for / while a vlastní funkce. Výstup sériové linky se v simulaci zobrazí pod deskou. Pin výstupu dá 5 V přes asi 25 Ω – LED vždy přes rezistor!</p>';
+      else if (def === 'led') h += '<label>' + label + '<select name="t4">' + ES.Elec.LEDC.map((c, k) => '<option value="' + k + '"' + ((parseInt(it.t[4]) || 0) === k ? ' selected' : '') + '>' + c[0] + ' (≈ ' + String(c[2]).replace('.', ',') + ' V)</option>').join('') + '</select></label>';
+      else if (def === 'seg') h += '<label>' + label + '<select name="t4"><option value="0"' + (it.t[4] !== '1' ? ' selected' : '') + '>společná katoda (COM na GND)</option><option value="1"' + (it.t[4] === '1' ? ' selected' : '') + '>společná anoda (COM na +)</option></select></label>';
+      else h += f(label, 'p' + i, it.t[i], 'placeholder="' + esc(def) + '"');
+    }
+    if (d.params && d.params.some(p => !['sketch', 'led', 'seg'].includes(p[2]))) h += '<p>Hodnoty lze psát s předponami: 4k7, 100n, 2,2M, 470u. Prázdné pole = výchozí hodnota.</p>';
+    h += '<p>' + esc(d.norm || '') + '</p>';
+  }
   else {
     if (d.kind !== 'trans') h += f(d.kind === 'stage' ? 'Číslo kroku' : 'Označení', 't0', it.t[0], 'autofocus');
     if (d.kind === 'contact' || d.kind === 'contactor') h += '<p>Kontakt se ovládá cívkou (relé, časovačem, tlačítkem) se stejným označením.</p>';
@@ -420,8 +433,14 @@ async function editProps(it) {
     const nt = d.kind === 'supply' ? 0 : (d.terms || []).filter((_, i) => d.labels[i] !== undefined).length;
     if (nt) { h += '<p style="margin:10px 0 0">Popisy svorek</p><div class="terms">'; for (let i = 0; i < nt; i++) h += '<input name="term' + i + '" value="' + esc(it.t[2 + i]) + '">'; h += '</div>'; }
   }
-  if ((await ask(h, [['no', 'Zrušit'], ['ok', 'OK']])) !== 'ok') return;
+  const answer = ask(h, [['no', 'Zrušit'], ['ok', 'OK']]);
+  const skx = form.querySelector('#skx'), ta = form.querySelector('textarea.code');
+  if (skx && ta) skx.onchange = () => { if (skx.value) ta.value = ES.Elec.SKETCHES[skx.value][1]; skx.value = ''; };
+  if (ta) ta.onkeydown = e => { if (e.key === 'Tab') { e.preventDefault(); const a = ta.selectionStart; ta.setRangeText('  ', a, ta.selectionEnd, 'end'); } };
+  if ((await answer) !== 'ok') return;
   const v = Object.fromEntries(new FormData(form)); pushUndo();
+  if (v.sketch !== undefined) ES.Elec.setSketch(it, v.sketch);
+  for (const k in v) if (/^p\d$/.test(k)) it.t[+k.slice(1)] = String(v[k]).replace(/[#*$]/g, '').replace('µ', 'u').trim();
   if (v.wtype) it.type = +v.wtype;
   if (v.t0 !== undefined) it.t[0] = v.t0.replace(/[#*]/g, '');
   if (v.extra !== undefined) it.extra = v.extra.replace(/[#$]/g, '').replace(/\*(\d+)\*(\d+)/g, '·$1·$2');
@@ -470,7 +489,8 @@ function setAutoRoute(v) {
 }
 function setTool(t) {
   tool = t; if (t.kind !== 'place') placeRot = 0;
-  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b._tool && b._tool.kind === t.kind && b._tool.type === t.type));
+  if (t.kind !== 'select') { lastTool = { kind: t.kind, type: t.type }; drawLastBtns(); }
+  markTools();
   cv.style.cursor = t.kind === 'select' ? 'default' : 'crosshair';
   cand = null; hint(autoOn(t) ? HINTS.connect : HINTS[t.kind]); render();
 }
@@ -634,6 +654,7 @@ window.addEventListener('keydown', e => {
   if (mod && (k === '=' || k === '+')) { e.preventDefault(); cmd('zoomin'); return; }
   if (mod && k === '-') { e.preventDefault(); cmd('zoomout'); return; }
   if (mod && k === '0') { e.preventDefault(); cmd('fit'); return; }
+  if (k === 'q' && !mod && !e.altKey) { e.preventDefault(); toggleLast(); return; }
   if (mode === 'real' && !(mod && 'zy'.includes(k))) { rKey(e, k, mod); return; }
   if (k === 'escape') { if (sim) return; if (tool.kind === 'wire' && (tool.start || tool.a)) { tool.start = null; tool.a = null; render(); } else { sel = new Set(); setTool({ kind: 'select' }); } return; }
   if (sim) return;
@@ -652,7 +673,7 @@ window.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; })
 
 // ------------------------------------------------------------ simulace
 // levá / pravá kolébka dvojitého spínače podle místa kliknutí
-function partOf(it, x, y) { const [lx] = ES.rot(x - it.n[8], y - it.n[9], (4 - (it.n[17] & 3)) & 3); return lx < 3 ? 0 : 1; }
+function partOf(it, x, y) { const [lx, ly] = ES.rot(x - it.n[8], y - it.n[9], (4 - (it.n[17] & 3)) & 3); if (ES.getDef(it.type).kind === 'el') return ly < 6 ? 0 : 1; return lx < 3 ? 0 : 1; }
 // měření: napětí na prvku / potenciál vodiče pod kurzorem
 function probe(hv) {
   if (mode === 'real' && hv === undefined) return rProbe();
@@ -661,10 +682,12 @@ function probe(hv) {
   const c = sim.byUid.get(hover.uid), n = hover.n, V = v => Math.round(Math.hypot(v[0], v[1])) + ' V';
   if (ES.WIRE.has(hover.type)) {
     const net = sim.nets.ofKey.get(n[8] + ',' + n[9]); if (net === undefined) return '';
+    if (sim.elec && !sim.netPot[net]) { const ev = ES.Elec.netV(sim, net); if (ev !== null && ev !== undefined) return 'Vodič: ' + ES.Elec.fmt(ev, 'V') + ' proti zemi (0 V)'; }
     const p = sim.netPot[net], names = ES.potNames(p), v = ES.netVoltage(sim, net);
     return 'Vodič: ' + (names.length ? names.join('+') + ', ' : '') + (v ? V(v) + ' proti zemi' + (names.length ? '' : ' (přes zátěž)') : 'bez napětí');
   }
   if (!c) return '';
+  if (c.d.kind === 'el') return ES.Elec.probe(sim, hover);
   const nm = (hover.t[0] || c.d.name) + ': ';
   const M = sim.meas[hover.uid] || {}, A = x => (x || 0).toLocaleString('cs-CZ', { maximumFractionDigits: x < 1 ? 3 : 2 }) + ' A';
   if (c.d.kind === 'load' && c.d.sub === 'stair') return nm + 'schodišťový automat: ' + (M.left > 0 ? 'svítí ještě ' + Math.ceil(M.left) + ' s' : 'v klidu') + ' (nastaveno ' + ES.secondsOf(hover) + ' s)';
@@ -813,55 +836,111 @@ async function cmd(c) {
 document.querySelectorAll('[data-cmd]').forEach(b => b.addEventListener('click', () => { cmd(b.dataset.cmd); b.blur(); }));
 
 // ------------------------------------------------------------ paleta
-// sada palety: průmyslová elektrotechnika / domovní instalace
+// sada palety: průmysl / domovní instalace / elektrotechnika
 let pset = (() => { try { return localStorage.getItem('es.set') || 'ind'; } catch (e) { return 'ind'; } })();
-function setPicker(pal, rebuild) {
+const SETS = [['ind', 'Průmysl'], ['home', 'Domovní instalace'], ['el', 'Elektrotechnika']];
+function setPicker(pal) {
   const box = document.createElement('div'); box.className = 'setpick';
-  for (const [k, n] of [['ind', 'Průmysl'], ['home', 'Domovní instalace']]) {
+  for (const [k, n] of SETS) {
     const b = document.createElement('button'); b.textContent = n; b.className = k === pset ? 'active' : '';
     b.onclick = () => { pset = k; try { localStorage.setItem('es.set', k); } catch (e) {} buildPalette(); buildRealPalette(); setTool({ kind: 'select' }); rSetTool({ kind: 'select' }); };
     box.append(b);
   }
   pal.append(box);
 }
+// vyhledávání v paletě (společné pro schéma i realitu, hledá ve všech sadách)
+let pq = '';
+const fold = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+function palHead(pal, rebuild) {
+  const head = document.createElement('div'); head.className = 'palhead'; pal.append(head); setPicker(head);
+  const q = document.createElement('input'); q.type = 'search'; q.className = 'palsearch'; q.placeholder = 'Hledat součástku…'; q.value = pq; q.setAttribute('autocomplete', 'off');
+  q.oninput = () => { pq = q.value; document.querySelectorAll('.palsearch').forEach(o => { if (o !== q) o.value = pq; }); buildPalette(true); buildRealPalette(true); };
+  q.onkeydown = e => { if (e.key === 'Escape') { q.value = ''; q.oninput(); q.blur(); } else if (e.key === 'Enter') { const f = pal.querySelector('.items .tool'); if (f) { f.click(); q.blur(); } } };
+  head.append(q);
+  const body = document.createElement('div'); body.className = 'palbody'; pal.append(body); return body;
+}
 const secHead = (name, norm) => { const h = document.createElement('h3'); h.textContent = name; if (norm) { const n = document.createElement('small'); n.textContent = norm; h.append(n); } return h; };
-function buildPalette() {
-  const pal = $('#palette'); pal.innerHTML = ''; setPicker(pal);
-  const section = (name, norm) => { const h = secHead(name, norm); h.onclick = () => h.classList.toggle('closed'); const d = document.createElement('div'); d.className = 'items'; pal.append(h, d); return d; };
-  const add = (box, titleText, t, draw) => {
+const palNote = t => { const p = document.createElement('p'); p.className = 'palnote'; p.textContent = t; return p; };
+const wireIcon = (col, dash) => c => { c.strokeStyle = col; c.lineWidth = 6; c.lineCap = 'round'; if (dash) c.setLineDash([18, 8, 4, 8]); c.beginPath(); c.moveTo(14, 76); c.lineTo(14, 30); c.lineTo(82, 30); c.stroke(); c.setLineDash([]); c.fillStyle = col; c.beginPath(); c.arc(14, 76, 7, 0, 7); c.arc(82, 30, 7, 0, 7); c.fill(); };
+const WCOLS = { 4000: '#1d1d1f', 4009: '#1e6fd9', 4010: '#2e9e3e', 10106: '#1d1d1f' };
+// ikona nástroje / součástky do čtverce 96 × 96
+function toolIcon(t) {
+  if (t.kind === 'wire') return wireIcon(WCOLS[t.type] || '#1d1d1f', t.type === 4010);
+  if (t.kind === 'select') return c => { c.fillStyle = '#1d1d1f'; c.font = '60px -apple-system, Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('↖', 48, 50); };
+  if (t.kind === 'text') return c => { c.fillStyle = '#1d1d1f'; c.font = 'bold 40px -apple-system, Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('Abc', 48, 50); };
+  const code = t.type, d = ES.LIB[code];
+  if (t.kind === 'gfx') return c => { c.scale(96 / 16, 96 / 16); const g = ES.newItem(code, 3, 4); g.n[10] = 13; g.n[11] = 12; ES.drawItem(c, g, {}); };
+  return c => {
+    const it = ES.newItem(code, 0, 0); it.t[0] = '';
+    const xs = d.terms.map(p => p[0]), ys = d.terms.map(p => p[1]);
+    let b = [Math.min(-7, ...xs) - 1, Math.min(0, ...ys) - 1, Math.max(3, ...xs) + 3, Math.max(12, ...ys) + 1];
+    if (d.sym === 'supply') b = [-3, -9, Math.max(6, ...xs) + 3, 2]; if (d.sym === 'motor') b = [-4, -1, 20, 25];
+    if (d.sym === 'stage') b = [-7, -1, 7, 13]; if (d.sym === 'trans') b = [-6, -3, 6, 9]; if (d.sym === 'action') { b = [-4, -9, 20, 9]; it.t[0] = 'A'; } if (d.sym === 'key') b = [-6, -6, 6, 6];
+    if (d.sym === 'breaker' || d.sym === 'rcd') b[0] = -8; if (d.sym === 'meter') b = [-6, -1, 6, 13]; if (d.sym === 'trafo') b = [-3, -1, 9, 25]; if (d.deco === 'thermal') b[0] = -11;
+    if (d.kind === 'el') { b = d.bbox.slice(); if (d.sub === 'board') b[0] -= 3; if (b[2] - b[0] < 12) { const m = (b[0] + b[2]) / 2; b[0] = m - 6; b[2] = m + 6; } }
+    const s = 92 / Math.max(b[2] - b[0], b[3] - b[1]);
+    c.translate(48 - (b[0] + b[2]) / 2 * s, 48 - (b[1] + b[3]) / 2 * s); c.scale(s, s); ES.drawItem(c, it, { noText: d.sym !== 'supply' && d.sym !== 'motor' && d.sym !== 'action' && d.sub !== 'vcc' });
+  };
+}
+function buildPalette(bodyOnly) {
+  const pal = $('#palette'); let body = pal.querySelector('.palbody');
+  if (!bodyOnly || !body) { pal.innerHTML = ''; body = palHead(pal); } else body.innerHTML = '';
+  const section = (name, norm) => { const h = secHead(name, norm); h.onclick = () => h.classList.toggle('closed'); const d = document.createElement('div'); d.className = 'items'; body.append(h, d); return d; };
+  const add = (box, titleText, t) => {
     const b = document.createElement('button'); b.className = 'tool'; b.title = titleText; b._tool = t;
-    if (typeof draw === 'string') { b.classList.add('text'); b.textContent = draw; }
-    else { const c = document.createElement('canvas'); c.width = c.height = 96; draw(c.getContext('2d')); b.append(c); }
+    const c = document.createElement('canvas'); c.width = c.height = 96; toolIcon(t)(c.getContext('2d')); b.append(c);
     b.onclick = () => setTool(Object.assign({}, t)); box.append(b);
   };
-  const wireIcon = (col, dash) => c => { c.strokeStyle = col; c.lineWidth = 6; c.lineCap = 'round'; if (dash) c.setLineDash([18, 8, 4, 8]); c.beginPath(); c.moveTo(14, 76); c.lineTo(14, 30); c.lineTo(82, 30); c.stroke(); c.setLineDash([]); c.fillStyle = col; c.beginPath(); c.arc(14, 76, 7, 0, 7); c.arc(82, 30, 7, 0, 7); c.fill(); };
-  const t0 = section('Nástroje');
-  add(t0, 'Výběr a přesun (Esc)', { kind: 'select' }, '↖︎');
-  add(t0, 'Vodič (W)', { kind: 'wire', type: 4000 }, wireIcon('#1d1d1f'));
-  add(t0, 'Nulový vodič N', { kind: 'wire', type: 4009 }, wireIcon('#1e6fd9'));
-  add(t0, 'Ochranný vodič PE', { kind: 'wire', type: 4010 }, wireIcon('#2e9e3e', true));
+  const q = fold(pq.trim()); let found = 0;
   for (const cat of [...ES.CATS.filter(c => c.set !== 'both'), ...ES.CATS.filter(c => c.set === 'both')]) {
-    if (cat.set !== 'both' && cat.set !== pset) continue;
-    const box = section(cat.name, cat.norm);
-    for (const code of cat.items) {
-      const d = ES.LIB[code];
-      if (d.kind === 'text') { add(box, 'Text', { kind: 'text', type: 8 }, 'Abc'); continue; }
-      if (d.kind === 'gfx') { add(box, d.name, { kind: 'gfx', type: code }, c => { c.scale(96 / 16, 96 / 16); const g = ES.newItem(code, 3, 4); g.n[10] = 13; g.n[11] = 12; ES.drawItem(c, g, {}); }); continue; }
-      add(box, d.name, { kind: 'place', type: code }, c => {
-        const it = ES.newItem(code, 0, 0); it.t[0] = '';
-        const xs = d.terms.map(p => p[0]), ys = d.terms.map(p => p[1]);
-        let b = [Math.min(-7, ...xs) - 1, Math.min(0, ...ys) - 1, Math.max(3, ...xs) + 3, Math.max(12, ...ys) + 1];
-        if (d.sym === 'supply') b = [-3, -9, Math.max(6, ...xs) + 3, 2]; if (d.sym === 'motor') b = [-4, -1, 20, 25];
-        if (d.sym === 'stage') b = [-7, -1, 7, 13]; if (d.sym === 'trans') b = [-6, -3, 6, 9]; if (d.sym === 'action') { b = [-4, -9, 20, 9]; it.t[0] = 'A'; } if (d.sym === 'key') b = [-6, -6, 6, 6];
-        if (d.sym === 'breaker' || d.sym === 'rcd') b[0] = -8; if (d.sym === 'meter') b = [-6, -1, 6, 13]; if (d.sym === 'trafo') b = [-3, -1, 9, 25]; if (d.deco === 'thermal') b[0] = -11;
-        const s = 92 / Math.max(b[2] - b[0], b[3] - b[1]);
-        c.translate(48 - (b[0] + b[2]) / 2 * s, 48 - (b[1] + b[3]) / 2 * s); c.scale(s, s); ES.drawItem(c, it, { noText: d.sym !== 'supply' && d.sym !== 'motor' && d.sym !== 'action' });
-      });
+    if (!q && cat.set !== 'both' && cat.set !== pset) continue;
+    let items = cat.items;
+    if (q) { const cm = fold(cat.name).includes(q); items = items.filter(code => cm || fold(ES.LIB[code].name).includes(q) || fold(ES.LIB[code].pre).replace('-', '') === q); if (!items.length) continue; }
+    const other = q && cat.set !== pset && cat.set !== 'both' ? ' · ' + SETS.find(x => x[0] === cat.set)[1] : '';
+    const box = section(cat.name + other, q ? '' : cat.norm);
+    for (const code of items) {
+      const d = ES.LIB[code]; found++;
+      if (d.kind === 'text') add(box, 'Text', { kind: 'text', type: 8 });
+      else if (d.kind === 'gfx') add(box, d.name, { kind: 'gfx', type: code });
+      else add(box, d.name, { kind: 'place', type: code });
     }
-    if (cat.name === 'GRAFCET') add(box, 'Spojnice GRAFCET', { kind: 'wire', type: 10106 }, wireIcon('#1d1d1f'));
+    if (cat.name === 'GRAFCET') add(box, 'Spojnice GRAFCET', { kind: 'wire', type: 10106 });
+  }
+  if (q && !found) body.append(palNote('Nic nenalezeno. Zkuste jiné slovo (např. „LED“, „relé“, „jistič“, „Arduino“).'));
+  markTools();
+}
+function markTools() {
+  document.querySelectorAll('#palette .tool, #tbs .tbt').forEach(b => b.classList.toggle('active', !!b._tool && b._tool.kind === tool.kind && b._tool.type === tool.type));
+}
+// ---- nástroje v horní liště a přepínání poslední součástka / kurzor (Q)
+let lastTool = null, lastRTool = null, lastBtn = null, lastRBtn = null, rWireCanvas = null;
+const tbCanvas = draw => { const c = document.createElement('canvas'); c.width = c.height = 48; const x = c.getContext('2d'); x.scale(0.5, 0.5); draw(x); return c; };
+function buildToolbar() {
+  const mkb = (box, title, content, fn) => { const b = document.createElement('button'); b.className = 'tbt'; b.title = title; if (typeof content === 'string') b.textContent = content; else b.append(content); b.onclick = () => { fn(); b.blur(); }; box.append(b); return b; };
+  const s = $('#tbs'); s.innerHTML = '';
+  mkb(s, 'Výběr a přesun (Esc)', '↖︎', () => setTool({ kind: 'select' }))._tool = { kind: 'select' };
+  for (const [type, title] of [[4000, 'Vodič (W)'], [4009, 'Nulový vodič N'], [4010, 'Ochranný vodič PE']]) mkb(s, title, tbCanvas(toolIcon({ kind: 'wire', type })), () => setTool({ kind: 'wire', type }))._tool = { kind: 'wire', type };
+  lastBtn = mkb(s, 'Přepnout mezi poslední součástkou / vodičem a kurzorem (Q)', tbCanvas(() => {}), toggleLast); lastBtn.classList.add('last');
+  const r = $('#tbr'); r.innerHTML = '';
+  mkb(r, 'Výběr a přesun (Esc)', '↖︎', () => rSetTool({ kind: 'select' }))._rt = { kind: 'select' };
+  rWireCanvas = tbCanvas(() => {}); mkb(r, 'Vodič (W) – barvu zvolíte v paletě', rWireCanvas, () => rSetTool({ kind: 'wire', name: 'wire' }))._rt = { kind: 'wire', name: 'wire' };
+  lastRBtn = mkb(r, 'Přepnout mezi posledním přístrojem / vodičem a kurzorem (Q)', tbCanvas(() => {}), toggleLast); lastRBtn.classList.add('last');
+  drawLastBtns();
+}
+function drawLastBtns() {
+  for (const [b, t, real] of [[lastBtn, lastTool, false], [lastRBtn, lastRTool, true]]) {
+    if (!b) continue; const c = b.querySelector('canvas'), x = c.getContext('2d'); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, 48, 48); x.scale(0.5, 0.5);
+    b.classList.toggle('empty', !t);
+    if (!t) { x.fillStyle = '#8a8a90'; x.font = 'bold 44px -apple-system, Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('⇄', 48, 50); continue; }
+    if (real) realIcon(t)(x); else toolIcon(t)(x);
+    b.title = (real ? 'Přepnout: ' : 'Přepnout: ') + (t.kind === 'wire' ? 'vodič' : t.name || (ES.LIB[t.type] || {}).name || '') + ' ⇄ kurzor (Q)';
   }
 }
-
+function toggleLast() {
+  if (sim) return;
+  if (mode === 'real') { if (rtool.kind === 'select' && lastRTool) rSetTool(Object.assign({}, lastRTool)); else rSetTool({ kind: 'select' }); }
+  else if (mode === 'schema') { if (tool.kind === 'select' && lastTool) setTool(Object.assign({}, lastTool)); else setTool({ kind: 'select' }); }
+}
 
 // ------------------------------------------------------------ realita
 // Skutečné přístroje se svorkami; stejné prvky jako ve schématu, spojují se barevnými vodiči.
@@ -932,8 +1011,9 @@ function rFit() {
 }
 function rSetTool(t) {
   rtool = t; rdraft = null;
-  document.querySelectorAll('#rpalette .tool').forEach(b => b.classList.toggle('active', !!b._rt && b._rt.kind === t.kind && b._rt.name === t.name));
-  cv.style.cursor = t.kind === 'select' ? 'default' : 'crosshair'; hint(RHINT[t.kind]); render();
+  if (t.kind !== 'select') { lastRTool = Object.assign({}, t); drawLastBtns(); }
+  document.querySelectorAll('#rpalette .tool, #tbr .tbt').forEach(b => b.classList.toggle('active', !!b._rt && b._rt.kind === t.kind && b._rt.name === t.name));
+  if (mode === 'real') { cv.style.cursor = t.kind === 'select' ? 'default' : 'crosshair'; hint(RHINT[t.kind]); render(); }
 }
 // prvek, který se ovládá kliknutím na přístroj v simulaci
 function pressTarget(g) { return g.items.find(i => { const d = ES.getDef(i.type); return d.click || ['breaker', 'mswitch', 'mstarter', 'rcd', 'fuse', 'thermal', 'hsw', 'socket', 'socket3', 'load3'].includes(d.kind); }); }
@@ -1149,33 +1229,41 @@ function rExportPNG() {
   const u8 = unb64(c.toDataURL('image/png').split(',')[1]), name = fileName.replace(/\.cad$/i, '') + ' - realita.png';
   if (native) native.postMessage({ cmd: 'export', name, data: b64(u8) }); else webSave(name, u8, 'image/png', [{ description: 'Obrázek PNG', accept: { 'image/png': ['.png'] } }]);
 }
-function buildRealPalette() {
-  const pal = $('#rpalette'); pal.innerHTML = ''; setPicker(pal);
-  const section = (name, norm) => { const h = secHead(name, norm); h.onclick = () => h.classList.toggle('closed'); const d = document.createElement('div'); d.className = 'items'; pal.append(h, d); return d; };
-  const t0 = section('Nástroje');
+function realIcon(t) {
+  if (t.kind === 'wire') return c => R.drawWire(c, R.wirePts({ x: 16, y: 76, dir: [0, -1] }, { x: 80, y: 20, dir: [0, 1] }), wcol === 'auto' ? '#7a4a22' : wcol, false);
+  return c => { const g = R.presetDevice(t.types, ''), s = 88 / Math.max(g.w, g.h); c.translate(48 - g.w * s / 2, 48 - g.h * s / 2); c.scale(s, s); R.drawDevice(c, g, { icon: true }); };
+}
+function buildRealPalette(bodyOnly) {
+  const pal = $('#rpalette'); let body = pal.querySelector('.palbody');
+  if (!bodyOnly || !body) { pal.innerHTML = ''; body = palHead(pal); } else body.innerHTML = '';
+  const section = (name, norm) => { const h = secHead(name, norm); h.onclick = () => h.classList.toggle('closed'); const d = document.createElement('div'); d.className = 'items'; body.append(h, d); return d; };
   const tb = (box, title, t, content) => { const b = document.createElement('button'); b.className = 'tool'; b.title = title; b._rt = t; if (typeof content === 'string') { b.classList.add('text'); b.textContent = content; } else b.append(content); b.onclick = () => rSetTool(Object.assign({}, t)); box.append(b); return b; };
-  tb(t0, 'Výběr a přesun (Esc)', { kind: 'select' }, '↖︎');
-  const wc = document.createElement('canvas'); wc.width = wc.height = 96;
-  const drawW = () => { const c = wc.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, 96, 96); c.scale(4, 4); R.drawWire(c, R.wirePts({ x: 4, y: 19, dir: [0, -1] }, { x: 20, y: 5, dir: [0, 1] }), wcol === 'auto' ? '#7a4a22' : wcol, false); };
-  drawW(); tb(t0, 'Vodič (W)', { kind: 'wire', name: 'wire' }, wc);
-  const sw = section('Barva vodiče', 'A = automaticky podle normy');
-  for (const [c, n] of [['auto', 'Auto – barva podle normy a zapojení'], ...R.WCOL]) {
+  const drawW = () => { if (!rWireCanvas) return; const c = rWireCanvas.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, 48, 48); c.scale(0.5, 0.5); realIcon({ kind: 'wire' })(c); drawLastBtns(); };
+  drawW();
+  const q = fold(pq.trim());
+  const sw = q ? null : section('Barva vodiče', 'A = automaticky podle normy');
+  if (sw) for (const [c, n] of [['auto', 'Auto – barva podle normy a zapojení'], ...R.WCOL]) {
     const b = document.createElement('button'); b.className = 'swatch' + (c === wcol ? ' active' : '') + (c === 'auto' ? ' auto' : ''); b.title = n;
     if (c === 'auto') b.textContent = 'A';
     b.style.background = c === 'auto' ? 'conic-gradient(#7a4a22 0 20%, #1b1b1b 0 40%, #8d8d8d 0 60%, #2f80ed 0 80%, #2f9e44 0)' : c === 'gnye' ? 'repeating-linear-gradient(45deg,#2f9e44 0 6px,#f3d21c 6px 12px)' : c;
     b.onclick = () => { wcol = c; pal.querySelectorAll('.swatch').forEach(x => x.classList.toggle('active', x === b)); drawW(); if (rwsel >= 0 && !sim) { pushUndo(); const w = doc.real.wires[rwsel]; w.c = c === 'auto' ? R.normColor(doc, w, wnorm)[0] : c; rbad = null; touch(); render(); } else if (rtool.kind !== 'wire') rSetTool({ kind: 'wire', name: 'wire' }); };
     sw.append(b);
   }
+  let found = 0;
   for (const [cat, list, set, norm] of R.PRESETS) {
-    if ((set || 'ind') !== pset) continue;
-    const box = section(cat, norm);
-    for (const [name, types] of list) {
-      const c = document.createElement('canvas'); c.width = c.height = 96;
-      const g = R.presetDevice(types, ''), x = c.getContext('2d'), s = 88 / Math.max(g.w, g.h);
-      x.translate(48 - g.w * s / 2, 48 - g.h * s / 2); x.scale(s, s); R.drawDevice(x, g, { icon: true });
-      tb(box, name, { kind: 'place', name, types }, c);
+    if (!q && (set || 'ind') !== pset) continue;
+    const cm = q && fold(cat).includes(q), items = q ? list.filter(([name]) => cm || fold(name).includes(q)) : list;
+    if (!items.length) continue;
+    const other = q && (set || 'ind') !== pset ? ' · ' + SETS.find(x => x[0] === (set || 'ind'))[1] : '';
+    const box = section(cat + other, q ? '' : norm);
+    for (const [name, types] of items) {
+      const c = document.createElement('canvas'); c.width = c.height = 96; realIcon({ types })(c.getContext('2d'));
+      tb(box, name, { kind: 'place', name, types }, c); found++;
     }
   }
+  if (!q && pset === 'el') body.append(palNote('Elektrotechnika a desky Arduino jsou zatím jen ve schématu – přepněte na záložku Schéma. V realitě se elektronické součástky propojují podle schématu.'));
+  if (q && !found) body.append(palNote('Nic nenalezeno.'));
+  document.querySelectorAll('#rpalette .tool, #tbr .tbt').forEach(b => b.classList.toggle('active', !!b._rt && b._rt.kind === rtool.kind && b._rt.name === rtool.name));
 }
 
 // ------------------------------------------------------------ start
@@ -1199,7 +1287,7 @@ function setTab(t) {
   if (t === 'real' && !rview.fitted) rFit(); else render();
 }
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => { setTab(b.dataset.tab); b.blur(); }));
-buildPalette(); buildRealPalette(); setTool({ kind: 'select' }); title();
+buildToolbar(); buildPalette(); buildRealPalette(); setTool({ kind: 'select' }); title();
 { const ns = $('#wnorm'); if (ns) { ns.innerHTML = Object.entries(R.NORMS).map(([k, v]) => '<option value="' + k + '"' + (k === wnorm ? ' selected' : '') + '>' + esc(v.name) + '</option>').join(''); ns.onchange = () => { wnorm = ns.value; try { localStorage.setItem('es.wnorm', wnorm); } catch (e) {} rbad = null; render(); hint('Norma barev vodičů: ' + R.NORMS[wnorm].name + '. Nové vodiče s barvou „A“ se obarví podle ní; stávající přebarvíte tlačítkem.'); ns.blur(); }; } }
 new ResizeObserver(render).observe(stage);
 window.addEventListener('beforeunload', e => { if (dirty && !native) { e.preventDefault(); e.returnValue = ''; } });

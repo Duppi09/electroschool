@@ -15,6 +15,29 @@ Obě verze sdílejí tentýž kód ve složce `app/`.
 open ios/ElectroSchool.xcodeproj   # aplikace pro iPadOS
 ```
 
+### Elektrotechnika a Arduino
+
+Třetí sada palety **Elektrotechnika** obsahuje:
+- **Zdroje a měření:** baterie, zdroj, generátor obdélníku, zem, +5 V, voltmetr, ampérmetr.
+- **Pasivní součástky:** rezistor, potenciometr, fotorezistor, termistor NTC, kondenzátor, elektrolyt, cívka, pojistka.
+- **Polovodiče:** dioda, Zenerova dioda, LED v šesti barvách, tranzistory NPN a PNP, MOSFET N, stabilizátor 7805.
+- **Spínače a relé:** tlačítka, spínač, přepínač, jazýčkový kontakt, relé.
+- **Výstupy:** žárovka, bzučák, motorek, sedmisegmentový displej, RGB LED.
+- **Logická hradla:** NOT, AND, OR, NAND, NOR, XOR.
+- **Desky Arduino:** Uno, Nano, Mega 2560.
+
+Simulace počítá stejnosměrný obvod uzlovou metodou, nelineární prvky (diody, LED, tranzistory) řeší Newtonovou metodou a kondenzátory a cívky průběžně v čase. Vodiče se barví podle napětí (0 V modře, nejvyšší napětí červeně, bez napětí šedě). LED bez rezistoru se spálí, přetížený rezistor shoří a přetížený pin Arduina se ohlásí. Klikáním se ovládají tlačítka, spínače, potenciometr (horní nebo dolní polovina), fotorezistor (světlo, šero, tma) a termistor (teplota).
+
+Dvojklik na desku Arduino otevře editor programu se sedmi ukázkami. Jazyk je zjednodušené Arduino (C/C++): setup/loop, pinMode, digitalWrite/Read, analogRead/Write (PWM), delay, millis, map, Serial.print/println, proměnné, pole, if/for/while a vlastní funkce. Výstup sériové linky se zobrazí pod deskou. Program se ukládá do souboru .cad.
+
+Ukázky: *Elektronika: LED, tranzistor, kondenzátor, dělič*, *Arduino: semafor s tlačítkem pro chodce*, *Elektronika: logická hradla*.
+
+### Paleta, lišta nástrojů a zkratky
+
+- **Hledání:** pole *Hledat součástku…* nahoře v paletě hledá ve všech sadách. Enter vloží první nalezenou součástku, Esc hledání vymaže.
+- **Lišta nástrojů:** výběr a vodiče (L, N, PE) jsou v horní liště, takže se v paletě nemusí rolovat nahoru.
+- **Klávesa Q** (nebo tlačítko ⇄ v liště) přepíná mezi naposledy vybranou součástkou nebo vodičem a kurzorem. Funguje ve schématu i v realitě.
+
 ### Vodič spojuje jen své dva konce
 
 Vodič ve schématu propojí vždy jen svorky na svých koncích. Když vede přes další svorky, **nespojí se s nimi**, protože by to byl zkrat, a ten se hledá hůř než chybějící spoj. Svorka, přes kterou vodič jen prochází, má červený kroužek a po najetí myší se ukáže vysvětlení. Starší soubory z CADe_SIMU, kde se takové svorky spojovaly, se při otevření rozdělí, takže zapojení zůstane, jak ho autor nakreslil. Soubory uložené v ElectroSchool nesou značku a nedělí se.
@@ -53,6 +76,7 @@ $JSC app/core.js app/real.js tools/demo_domov.js -- test
 $JSC app/core.js app/real.js tools/domov3f_test.js
 $JSC app/calc.js tools/calc_test.js
 $JSC app/core.js app/real.js tools/reroute_test.js -- Priklady
+$JSC app/core.js app/elec.js tools/elec_test.js
 ```
 
 Ukázková schémata ve složce `Priklady/` (kromě souborů „ElectroSchool – …“) pocházejí z repozitáře [ELECTROALL/CADE-SIMU](https://github.com/ELECTROALL/CADE-SIMU).

@@ -15,7 +15,7 @@ done
 lipo -create build/ElectroSchool-arm64 build/ElectroSchool-x86_64 -output "$APP/Contents/MacOS/ElectroSchool"
 rm build/ElectroSchool-arm64 build/ElectroSchool-x86_64
 
-cp app/index.html app/style.css app/core.js app/symbols.js app/real.js app/calc.js app/ui.js app/examples.js "$APP/Contents/Resources/app/"
+cp app/index.html app/style.css app/core.js app/symbols.js app/elec.js app/real.js app/calc.js app/ui.js app/examples.js "$APP/Contents/Resources/app/"
 
 # ikona
 swift mac/icon.swift build/icon.png
