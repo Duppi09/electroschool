@@ -15,6 +15,12 @@ Obě verze sdílejí tentýž kód ve složce `app/`.
 open ios/ElectroSchool.xcodeproj   # aplikace pro iPadOS
 ```
 
+### Vodič spojuje jen své dva konce
+
+Vodič ve schématu propojí vždy jen svorky na svých koncích. Když vede přes další svorky, **nespojí se s nimi**, protože by to byl zkrat, a ten se hledá hůř než chybějící spoj. Svorka, přes kterou vodič jen prochází, má červený kroužek a po najetí myší se ukáže vysvětlení. Starší soubory z CADe_SIMU, kde se takové svorky spojovaly, se při otevření rozdělí, takže zapojení zůstane, jak ho autor nakreslil. Soubory uložené v ElectroSchool nesou značku a nedělí se.
+
+Výběr rámečkem vybere každý prvek, kterého se rámeček dotkne, i jen malou částí.
+
 ### Posun úseku vodiče
 
 Ve schématu vyberte úsek vodiče (klik/klepnutí, nebo více úseků se Shiftem či rámečkem) a táhněte ho. Napojené vodiče, odbočky i svorky přístrojů ho následují: kolmé navazující vodiče se prodlouží nebo zkrátí, jinde se doplní pravoúhlé zalomení. Konec napojený na svorku nebo kolmý vodič se posouvá jen kolmo k úseku, úsek se tak natáhne nebo zkrátí bez překryvů. Funguje na Macu, webu i iPadu, Zpět vrátí celý posun.

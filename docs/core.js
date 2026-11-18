@@ -218,9 +218,33 @@ function parseCad(text) {
     try { doc.real = realFromFile(JSON.parse(trailer.slice(ri + REAL_TAG.trim().length)), items); } catch (e) { /* poškozená data reality se ignorují */ }
     doc.trailer = trailer.slice(0, trailer.slice(ri - 2, ri) === '\r\n' ? ri - 2 : ri);
   }
+  // soubory uložené v ElectroSchool už mají vodiče spojující jen konce – nedělit
+  const ei = doc.trailer.indexOf(ENDS_TAG);
+  if (ei >= 0) doc.trailer = doc.trailer.slice(0, ei) + doc.trailer.slice(ei + ENDS_TAG.length);
+  else splitAtTerms(doc);
   return doc;
 }
+// Kompatibilita s CADe_SIMU: tam se svorka uprostřed vodiče spojila. Takový vodič se rozdělí,
+// aby se zachovalo zapojení autora – nové vodiče už spojují jen své konce.
+function splitAtTerms(doc) {
+  const terms = [];
+  for (const it of doc.items) if (!WIRE.has(it.type) && it.type !== NODE) for (const p of termsOf(it)) terms.push(p);
+  const add = [];
+  for (const w of doc.items) {
+    if (!WIRE.has(w.type)) continue;
+    const seg = [w.n[8], w.n[9], w.n[10], w.n[11]];
+    const cut = terms.filter(([x, y]) => onSeg(x, y, seg)).sort((a, b) => Math.hypot(a[0] - seg[0], a[1] - seg[1]) - Math.hypot(b[0] - seg[0], b[1] - seg[1]));
+    const uniq = cut.filter((p, i) => !i || p[0] !== cut[i - 1][0] || p[1] !== cut[i - 1][1]);
+    if (!uniq.length) continue;
+    const pts = [...uniq, [seg[2], seg[3]]];
+    w.n[10] = pts[0][0]; w.n[11] = pts[0][1];
+    for (let i = 1; i < pts.length; i++) { const c = newItem(w.type, 0, 0); c.n = w.n.slice(); c.t = w.t.slice(); c.n[8] = pts[i - 1][0]; c.n[9] = pts[i - 1][1]; c.n[10] = pts[i][0]; c.n[11] = pts[i][1]; add.push(c); }
+  }
+  doc.items.push(...add);
+  return add.length;
+}
 const REAL_TAG = '\r\n#ELEKTROSIMU-REALITA#';
+const ENDS_TAG = '\r\n#ELECTROSCHOOL-VODIC-JEN-KONCE#';
 function emptyReal() { return { pos: {}, col: {}, wires: [] }; }
 function realFromFile(j, items) {
   const r = emptyReal(), U = i => items[i] && items[i].uid;
@@ -254,7 +278,7 @@ function serializeCad(doc) {
     if (d.bbox && d.kind !== 'unknown') { const b = bboxOf(it); n[12] = b[0]; n[13] = b[1]; n[14] = b[2]; n[15] = b[3]; }
     out += '*' + (id++) + '*' + it.type + '#' + it.t.join('#') + '*' + n.join('*') + '#' + (it.extra || '');
   }
-  out += doc.trailer || DEFAULT_TRAILER;
+  out += (doc.trailer || DEFAULT_TRAILER) + ENDS_TAG;
   const r = doc.real;
   if (r && (r.wires.length || Object.keys(r.pos).length || Object.keys(r.col).length)) out += REAL_TAG + JSON.stringify(realToFile(r, items));
   return out;
@@ -297,10 +321,13 @@ function buildNets(doc) {
   // Bod uvnitř vodiče se s ním spojí jen tehdy, je-li to uzel (tečka), svorka součástky,
   // konec souběžného (překrývajícího se) vodiče nebo spojnice GRAFCETu. Pouhé křížení ani
   // dotyk tvaru T bez tečky spojení není – stejně jako v CADe_SIMU.
+  // Svorka ležící uprostřed vodiče se s ním NEspojí: vodič spojuje vždy jen své dva konce
+  // (vodič natažený přes více svorek by jinak udělal zkrat). Starší soubory z CADe_SIMU, které
+  // na tom stavěly, se při načtení rozdělí v těch svorkách (splitAtTerms).
   const hard = new Set(), endsAt = new Map();
   for (const it of doc.items) {
     if (it.type === NODE) { pt(it.n[8], it.n[9]); hard.add(it.n[8] + ',' + it.n[9]); }
-    else for (const [x, y] of termsOf(it)) { pt(x, y); hard.add(x + ',' + y); }
+    else for (const [x, y] of termsOf(it)) pt(x, y);
   }
   for (const w of ws) for (const k of [w[0] + ',' + w[1], w[2] + ',' + w[3]]) { if (!endsAt.has(k)) endsAt.set(k, []); endsAt.get(k).push(w); }
   const colin = (v, w) => (v[2] - v[0]) * (w[3] - w[1]) === (v[3] - v[1]) * (w[2] - w[0]);
@@ -759,5 +786,5 @@ function simPress(st, it, down, latch, part) {
 }
 
 root.ES = { LIB, CATS, POT, POT_NAME, WIRE, NODE, getDef, norm, rot, parseCad, serializeCad, newItem, cloneItem, termsOf, bboxOf,
-  buildNets, buildRealNets, emptyReal, REAL_KINDS, junctions, onSeg, PHASOR, netVoltage, potNames, shorted, TZ, simStart, simStep, simPress, isActuated, keyOf, secondsOf, DEFAULT_TRAILER };
+  buildNets, buildRealNets, splitAtTerms, emptyReal, REAL_KINDS, junctions, onSeg, PHASOR, netVoltage, potNames, shorted, TZ, simStart, simStep, simPress, isActuated, keyOf, secondsOf, DEFAULT_TRAILER };
 })(typeof window !== 'undefined' ? window : globalThis);

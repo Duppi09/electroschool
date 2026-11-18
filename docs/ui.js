@@ -147,6 +147,7 @@ function drawScene(c, opt) {
     c.fillStyle = col; c.beginPath(); c.arc(x, y, 0.75, 0, 7); c.fill();
   }
 }
+let pcache = { ver: -1, pts: [] }, passHover = false;
 function render() {
   resize();
   if (mode === 'real') return renderReal();
@@ -166,6 +167,13 @@ function render() {
   }
   drawScene(ctx, { sim, sel, link: linkedSet() });
   if (!sim) {
+    // svorka, přes kterou vodič jen prochází, NENÍ spojená – červený kroužek upozorní žáka
+    if (pcache.ver !== ver) {
+      const ws = doc.items.filter(i => ES.WIRE.has(i.type)); pcache = { ver, pts: [] };
+      for (const it of doc.items) if (!ES.WIRE.has(it.type) && it.type !== ES.NODE) for (const [x, y] of ES.termsOf(it))
+        if (ws.some(w => ES.onSeg(x, y, [w.n[8], w.n[9], w.n[10], w.n[11]])) && !ws.some(w => (w.n[8] === x && w.n[9] === y) || (w.n[10] === x && w.n[11] === y))) pcache.pts.push([x, y]);
+    }
+    if (pcache.pts.length) { ctx.strokeStyle = '#d92b2b'; ctx.lineWidth = 0.45; for (const [x, y] of pcache.pts) { ctx.beginPath(); ctx.arc(x, y, 1.5, 0, 7); ctx.stroke(); } }
     // svorky při kreslení vodiče
     if (tool.kind === 'wire') {
       ctx.strokeStyle = '#0a66e8'; ctx.lineWidth = 0.25;
@@ -273,7 +281,6 @@ function wireDragPlan() {
   for (const w of selW) { addP(w.n[8], w.n[9], w); addP(w.n[10], w.n[11], w); }
   for (const w of selW) {
     for (const o of other) for (const e of [8, 10]) if (ES.onSeg(o.n[e], o.n[e + 1], segOf(w))) addP(o.n[e], o.n[e + 1], w);
-    for (const c of comps) for (const [tx, ty] of ES.termsOf(c)) if (ES.onSeg(tx, ty, segOf(w))) addP(tx, ty, w);
   }
   for (const w of selW) for (const p of pts.values()) if (ES.onSeg(p.x, p.y, segOf(w))) p.dirs.add(dirOf(w));
   const ends = new Map();
@@ -323,6 +330,21 @@ function wireDragEnd(P) {
   if (zero.size) doc.items = doc.items.filter(i => !zero.has(i));
   pruneNodes();
   for (const w of P.made) if (!zero.has(w)) { autoNode(w.n[8], w.n[9]); autoNode(w.n[10], w.n[11]); }
+}
+// rámeček vybere každý prvek, kterého se dotkne byť jen malou částí
+function bandHits(it, x0, y0, x1, y1) {
+  const k = ES.getDef(it.type).kind, n = it.n;
+  if (ES.WIRE.has(it.type) || (k === 'gfx' && ES.getDef(it.type).shape === 'line')) return segRect(n[8], n[9], n[10], n[11], x0, y0, x1, y1);
+  const b = itemBox(it); return b[0] <= x1 && b[2] >= x0 && b[1] <= y1 && b[3] >= y0;
+}
+function segRect(ax, ay, bx, by, x0, y0, x1, y1) {
+  const inR = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  if (inR(ax, ay) || inR(bx, by)) return true;
+  if (Math.max(ax, bx) < x0 || Math.min(ax, bx) > x1 || Math.max(ay, by) < y0 || Math.min(ay, by) > y1) return false;
+  if (ax === bx || ay === by) return true;
+  const side = (x, y) => Math.sign((bx - ax) * (y - ay) - (by - ay) * (x - ax));
+  const s = [side(x0, y0), side(x1, y0), side(x0, y1), side(x1, y1)];
+  return Math.min(...s) <= 0 && Math.max(...s) >= 0;
 }
 function del() { if (!sel.size || sim) return; pushUndo(); doc.items = doc.items.filter(i => !sel.has(i.uid)); pruneNodes(); sel = new Set(); touch(); render(); }
 function rotateSel() {
@@ -500,7 +522,11 @@ window.addEventListener('mousemove', e => {
   }
   if (tool.kind === 'wire') tool.flip = e.shiftKey;
   if (!sim && autoOn(tool)) { const c = pickPoint(rx, ry); if ((c && c.p + '') !== (cand && cand.p + '')) cand = c; if (!drag) render(); }
-  if (!sim && !drag && tool.kind === 'select' && e.target === cv) { const h = hit(rx, ry); if (h !== hover) { hover = h; hint((h && linkHint(h)) || HINTS.select); } }
+  if (!sim && !drag && tool.kind === 'select' && e.target === cv) {
+    const pass = pcache.pts.find(([x, y]) => Math.hypot(x - rx, y - ry) < Math.max(2, 8 / view.s));
+    if (pass) { if (!passHover) { passHover = true; hover = null; hint('Vodič přes tuto svorku jen prochází – NENÍ s ní spojený. Vodič spojuje vždy jen své dva konce; pro spojení ukončete vodič na svorce.'); } }
+    else { const h = hit(rx, ry); if (h !== hover || passHover) { passHover = false; hover = h; hint((h && linkHint(h)) || HINTS.select); } }
+  }
   if (!sim || drag) render();
   if (sim && !drag) { const it = hit(rx, ry), c = it && sim.byUid.get(it.uid); hover = it; cv.style.cursor = c && (c.d.click || c.d.kind === 'breaker' || c.d.kind === 'mswitch' || c.d.kind === 'thermal' || c.d.kind === 'fuse' || c.d.kind === 'mstarter' || c.d.kind === 'rcd' || c.d.kind === 'hsw' || c.d.kind === 'socket' || c.d.kind === 'socket3' || c.d.kind === 'load3') ? 'pointer' : 'default'; }
 });
@@ -515,7 +541,7 @@ window.addEventListener('mouseup', e => {
   if (d.kind === 'move' && d.moved) { if (d.plan) wireDragEnd(d.plan); touch(); }
   if (d.kind === 'band') {
     const x0 = Math.min(d.x0, mouse.rx), y0 = Math.min(d.y0, mouse.ry), x1 = Math.max(d.x0, mouse.rx), y1 = Math.max(d.y0, mouse.ry);
-    if (x1 - x0 > 0.5 || y1 - y0 > 0.5) for (const it of doc.items) { const b = itemBox(it); if (b[0] >= x0 && b[2] <= x1 && b[1] >= y0 && b[3] <= y1) sel.add(it.uid); }
+    if (x1 - x0 > 0.5 || y1 - y0 > 0.5) for (const it of doc.items) { if (bandHits(it, x0, y0, x1, y1)) sel.add(it.uid); }
   }
   if (d.kind === 'gfx' && (d.x0 !== mouse.x || d.y0 !== mouse.y)) { pushUndo(); const g = ES.newItem(tool.type, d.x0, d.y0); g.n[10] = mouse.x; g.n[11] = mouse.y; doc.items.push(g); touch(); }
   render();
