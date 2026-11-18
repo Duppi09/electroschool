@@ -43,7 +43,7 @@ function restore(json) { const j = JSON.parse(json); if (Array.isArray(j)) doc.i
 function hint(s) { $('#hint').textContent = s; }
 const HINTS = {
   connect: 'Propojení: klepněte na první svorku (nebo vodič), pak na druhou. Všechny vodiče se pak přepočítají tak, aby se nepřekrývaly. Prst můžete držet a posouvat, bod se vybere až po zvednutí prstu. Klepnutí do prázdna / Esc = zrušit začátek.',
-  select: 'Výběr: klik = vybrat, tažení = přesun, dvojklik = vlastnosti, R = otočit, ⌫ = smazat. Posun plátna: dva prsty / mezerník + tažení, zoom: gesto nebo ⌘ + kolečko.',
+  select: 'Výběr: klik = vybrat, tažení = přesun (u úseku vodiče ho napojené vodiče následují), dvojklik = vlastnosti, R = otočit, ⌫ = smazat. Posun plátna: dva prsty / mezerník + tažení, zoom: gesto nebo ⌘ + kolečko.',
   place: 'Kliknutím vložíte součástku. R = otočit, Esc = konec.',
   wire: 'Vodič: klik = začátek, další kliky = lomové body, konec na svorce nebo dvojklikem. Odbočka z vodiče vytvoří tečku; křížení bez tečky spojené není. Shift = obrátit lomení, Esc = konec.',
   gfx: 'Tažením nakreslíte tvar. Esc = konec.',
@@ -258,6 +258,72 @@ function moveItems(dx, dy) {
   }
   ver++;
 }
+// Posun úseku vodiče: napojené vodiče, svorky a odbočky ho následují (gumička).
+// Ukotvený konec se posouvá jen kolmo k úseku (úsek se natáhne/zkrátí), kolmé navazující
+// vodiče se prodlouží/zkrátí, jinde se doplní pravoúhlé zalomení – bez překryvů.
+function wireDragPlan() {
+  const its = doc.items.filter(i => sel.has(i.uid));
+  if (!its.length || !its.every(i => ES.WIRE.has(i.type) || i.type === ES.NODE) || !its.some(i => ES.WIRE.has(i.type))) return null;
+  const key = (x, y) => x + ',' + y, selW = its.filter(i => ES.WIRE.has(i.type)), segOf = w => [w.n[8], w.n[9], w.n[10], w.n[11]];
+  const dirOf = w => w.n[9] === w.n[11] && w.n[8] !== w.n[10] ? 'h' : w.n[8] === w.n[10] && w.n[9] !== w.n[11] ? 'v' : 'd';
+  const other = doc.items.filter(i => ES.WIRE.has(i.type) && !sel.has(i.uid));
+  const comps = doc.items.filter(i => !ES.WIRE.has(i.type) && i.type !== ES.NODE && !['gfx', 'text'].includes(ES.getDef(i.type).kind));
+  const pts = new Map(); // klíč -> {x, y, dirs, type}
+  const addP = (x, y, w) => { const k = key(x, y); if (!pts.has(k)) pts.set(k, { x, y, dirs: new Set(), type: w.type }); pts.get(k).dirs.add(dirOf(w)); };
+  for (const w of selW) { addP(w.n[8], w.n[9], w); addP(w.n[10], w.n[11], w); }
+  for (const w of selW) {
+    for (const o of other) for (const e of [8, 10]) if (ES.onSeg(o.n[e], o.n[e + 1], segOf(w))) addP(o.n[e], o.n[e + 1], w);
+    for (const c of comps) for (const [tx, ty] of ES.termsOf(c)) if (ES.onSeg(tx, ty, segOf(w))) addP(tx, ty, w);
+  }
+  for (const w of selW) for (const p of pts.values()) if (ES.onSeg(p.x, p.y, segOf(w))) p.dirs.add(dirOf(w));
+  const ends = new Map();
+  for (const o of other) for (const e of [8, 10]) if (pts.has(key(o.n[e], o.n[e + 1]))) { if (!ends.has(o)) ends.set(o, []); ends.get(o).push(e); }
+  const carry = [...ends].filter(([, es]) => es.length === 2).map(([o]) => o);
+  for (const [k, p] of pts) {
+    const att = [...ends].filter(([o, es]) => es.length === 1 && key(o.n[es[0]], o.n[es[0] + 1]) === k);
+    const through = other.some(o => ES.onSeg(p.x, p.y, segOf(o)));
+    const term = comps.some(c => ES.termsOf(c).some(([tx, ty]) => tx === p.x && ty === p.y));
+    p.adj = att.length === 1 && !through && !term ? { w: att[0][0], e: att[0][1][0] } : null;
+    p.jog = !p.adj && (att.length > 0 || through || term);
+    // podél jediného směru úseku se ukotvený bod nehýbe (kromě pokračování stejným směrem)
+    const d = p.dirs.size === 1 ? [...p.dirs][0] : 'd';
+    p.lock = (p.adj || p.jog) && d !== 'd' && !(p.adj && dirOf(p.adj.w) === d) ? d : null;
+  }
+  const orig = new Map(); for (const i of [...its, ...carry, ...[...pts.values()].filter(p => p.adj).map(p => p.adj.w)]) orig.set(i, i.n.slice());
+  return { its, selW, carry, pts, orig, made: [], key };
+}
+function wireDragApply(P, dx, dy) {
+  for (const [i, n] of P.orig) for (let j = 8; j < 12; j++) i.n[j] = n[j];
+  if (P.made.length) { const m = new Set(P.made); doc.items = doc.items.filter(i => !m.has(i)); P.made = []; }
+  const mk = (type, a, b) => { if (a[0] === b[0] && a[1] === b[1]) return; const w = ES.newItem(type, a[0], a[1]); w.n[10] = b[0]; w.n[11] = b[1]; doc.items.push(w); P.made.push(w); };
+  if (dx || dy) {
+    const tgt = new Map();
+    for (const [k, p] of P.pts) tgt.set(k, [p.x + (p.lock === 'h' ? 0 : dx), p.y + (p.lock === 'v' ? 0 : dy)]);
+    const moveEnd = (i, e, n) => { const t = tgt.get(P.key(n[e], n[e + 1])); if (t) { i.n[e] = t[0]; i.n[e + 1] = t[1]; } };
+    for (const i of P.its) { const n = P.orig.get(i); if (ES.WIRE.has(i.type)) { moveEnd(i, 8, n); moveEnd(i, 10, n); } else { i.n[8] += dx; i.n[9] += dy; i.n[10] += dx; i.n[11] += dy; } }
+    for (const i of P.carry) { const n = P.orig.get(i); moveEnd(i, 8, n); moveEnd(i, 10, n); }
+    for (const [k, p] of P.pts) {
+      const [tx, ty] = tgt.get(k); if (tx === p.x && ty === p.y) continue;
+      if (p.adj) {
+        const { w, e } = p.adj, q = P.orig.get(w), ox = q[18 - e], oy = q[19 - e];
+        if (ox === p.x && oy !== p.y && tx !== p.x) { w.n[e] = p.x; w.n[e + 1] = ty; mk(w.type, [p.x, ty], [tx, ty]); }
+        else if (oy === p.y && ox !== p.x && ty !== p.y) { w.n[e] = tx; w.n[e + 1] = p.y; mk(w.type, [tx, p.y], [tx, ty]); }
+        else { w.n[e] = tx; w.n[e + 1] = ty; }
+      } else if (p.jog) {
+        const c = p.dirs.has('h') ? [tx, p.y] : [p.x, ty];
+        mk(p.type, [p.x, p.y], c); mk(p.type, c, [tx, ty]);
+      }
+    }
+  }
+  ver++;
+}
+function wireDragEnd(P) {
+  const all = [...P.orig.keys(), ...P.made];
+  const zero = new Set(all.filter(i => ES.WIRE.has(i.type) && i.n[8] === i.n[10] && i.n[9] === i.n[11]));
+  if (zero.size) doc.items = doc.items.filter(i => !zero.has(i));
+  pruneNodes();
+  for (const w of P.made) if (!zero.has(w)) { autoNode(w.n[8], w.n[9]); autoNode(w.n[10], w.n[11]); }
+}
 function del() { if (!sel.size || sim) return; pushUndo(); doc.items = doc.items.filter(i => !sel.has(i.uid)); pruneNodes(); sel = new Set(); touch(); render(); }
 function rotateSel() {
   if (sim) return;
@@ -414,7 +480,7 @@ cv.addEventListener('mousedown', e => {
   const it = hit(rx, ry);
   if (it) {
     if (e.shiftKey) { sel.has(it.uid) ? sel.delete(it.uid) : sel.add(it.uid); } else if (!sel.has(it.uid)) sel = new Set([it.uid]);
-    drag = { kind: 'move', lx: x, ly: y, moved: false };
+    drag = { kind: 'move', lx: x, ly: y, x0: x, y0: y, moved: false, plan: null };
   } else { if (!e.shiftKey) sel = new Set(); drag = { kind: 'band', x0: rx, y0: ry, add: e.shiftKey }; }
   render();
 });
@@ -425,7 +491,11 @@ window.addEventListener('mousemove', e => {
     if (drag.kind === 'pan') { view.ox += e.clientX - drag.cx; view.oy += e.clientY - drag.cy; drag.cx = e.clientX; drag.cy = e.clientY; }
     else if (drag.kind === 'move') {
       const dx = mouse.x - drag.lx, dy = mouse.y - drag.ly;
-      if (dx || dy) { if (!drag.moved) { pushUndo(); drag.moved = true; } moveItems(dx, dy); drag.lx = mouse.x; drag.ly = mouse.y; }
+      if (dx || dy) {
+        if (!drag.moved) { pushUndo(); drag.moved = true; drag.plan = wireDragPlan(); }
+        if (drag.plan) wireDragApply(drag.plan, mouse.x - drag.x0, mouse.y - drag.y0); else moveItems(dx, dy);
+        drag.lx = mouse.x; drag.ly = mouse.y;
+      }
     }
   }
   if (tool.kind === 'wire') tool.flip = e.shiftKey;
@@ -442,7 +512,7 @@ window.addEventListener('mouseup', e => {
   const d = drag; drag = null;
   if (d.kind === 'pan') cv.style.cursor = tool.kind === 'select' ? 'default' : 'crosshair';
   if (d.kind === 'conn') { const [rx, ry] = toWorld(e); cand = pickPoint(rx, ry); connectPick(cand); return; }
-  if (d.kind === 'move' && d.moved) touch();
+  if (d.kind === 'move' && d.moved) { if (d.plan) wireDragEnd(d.plan); touch(); }
   if (d.kind === 'band') {
     const x0 = Math.min(d.x0, mouse.rx), y0 = Math.min(d.y0, mouse.ry), x1 = Math.max(d.x0, mouse.rx), y1 = Math.max(d.y0, mouse.ry);
     if (x1 - x0 > 0.5 || y1 - y0 > 0.5) for (const it of doc.items) { const b = itemBox(it); if (b[0] >= x0 && b[2] <= x1 && b[1] >= y0 && b[3] <= y1) sel.add(it.uid); }
@@ -782,7 +852,7 @@ const RHINT = {
   sim: 'SIMULACE PODLE REALITY: proud teče jen nataženými vodiči. Klikáním ovládáte jističe, tlačítka a přepínače (Shift = tlačítko zůstane stisknuté). Najetím na svorku změříte napětí.',
 };
 if (window.matchMedia && matchMedia('(pointer: coarse)').matches) {
-  HINTS.select = 'Výběr: klepnutí = vybrat, tažení = přesun, dvojí klepnutí = vlastnosti, dlouhý stisk = zrušit nástroj. Dva prsty = posun a přiblížení.';
+  HINTS.select = 'Výběr: klepnutí = vybrat, tažení = přesun (napojené vodiče úsek následují), dvojí klepnutí = vlastnosti, dlouhý stisk = zrušit nástroj. Dva prsty = posun a přiblížení.';
   RHINT.select = 'Realita: tažením ze svorky na svorku natáhnete vodič (klepáním do prázdna lomíte). Přístroj přesunete tažením, dvojí klepnutí = vlastnosti a barva. Dva prsty = posun a přiblížení.';
 }
 function rToWorld(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left - rview.ox) / rview.s, (e.clientY - r.top - rview.oy) / rview.s]; }

@@ -15,6 +15,10 @@ Obě verze sdílejí tentýž kód ve složce `app/`.
 open ios/ElectroSchool.xcodeproj   # aplikace pro iPadOS
 ```
 
+### Posun úseku vodiče
+
+Ve schématu vyberte úsek vodiče (klik/klepnutí, nebo více úseků se Shiftem či rámečkem) a táhněte ho. Napojené vodiče, odbočky i svorky přístrojů ho následují: kolmé navazující vodiče se prodlouží nebo zkrátí, jinde se doplní pravoúhlé zalomení. Konec napojený na svorku nebo kolmý vodič se posouvá jen kolmo k úseku, úsek se tak natáhne nebo zkrátí bez překryvů. Funguje na Macu, webu i iPadu, Zpět vrátí celý posun.
+
 ### Automatické vodiče (výchozí na iPadu)
 
 Tlačítko **Automatické vodiče** ve schématu: zvolíte vodič (L, N nebo PE), klepnete na první svorku (nebo na existující vodič)
