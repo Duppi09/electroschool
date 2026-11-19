@@ -45,7 +45,7 @@ const HINTS = {
   connect: 'Propojení: klepněte na první svorku (nebo vodič), pak na druhou. Všechny vodiče se pak přepočítají tak, aby se nepřekrývaly. Prst můžete držet a posouvat, bod se vybere až po zvednutí prstu. Klepnutí do prázdna / Esc = zrušit začátek.',
   select: 'Výběr: klik = vybrat, tažení = přesun (u úseku vodiče ho napojené vodiče následují), dvojklik = vlastnosti, R = otočit, ⌫ = smazat. Posun plátna: dva prsty / mezerník + tažení, zoom: gesto nebo ⌘ + kolečko.',
   place: 'Kliknutím vložíte součástku. R = otočit, Esc = konec.',
-  wire: 'Vodič: klik = začátek, další kliky = lomové body i svorky (hřebenové zapojení – svorkami, na které nekliknete, vodič jen prochází). Konec: znovu klik na poslední bod, dvojklik nebo Esc. Odbočka z vodiče vytvoří tečku; křížení bez tečky spojené není. Shift = obrátit lomení, Esc = konec.',
+  wire: 'Vodič: klik = začátek, další kliky = lomové body, konec na svorce (vodič spojí vždy jen tyto dva body – svorkami a vodiči, přes které jen prochází nebo se s nimi překrývá, se nespojí) nebo dvojklikem. Odbočka z vodiče vytvoří tečku; křížení bez tečky spojené není. Shift = obrátit lomení, Esc = konec.',
   gfx: 'Tažením nakreslíte tvar. Esc = konec.',
   text: 'Kliknutím umístíte text.',
   sim: 'SIMULACE: klikáním ovládáte jističe, tlačítka a spínače (Shift + klik = tlačítko zůstane stisknuté). Klik na tepelné relé = vybavení, na pojistku = přepálení/výměna. Najetím myší změříte napětí.',
@@ -252,9 +252,13 @@ function place(type, x, y) {
 }
 function addWire(type, a, b) { if (a[0] === b[0] && a[1] === b[1]) return; const w = ES.newItem(type, a[0], a[1]); w.n[10] = b[0]; w.n[11] = b[1]; doc.items.push(w); }
 // konec vodiče na jiném vodiči = odbočka: vloží spojovací tečku (uzel)
-function autoNode(x, y) {
+function autoNode(x, y, seg) {
   if (doc.items.some(i => i.type === ES.NODE && i.n[8] === x && i.n[9] === y)) return;
-  if (!doc.items.some(i => ES.WIRE.has(i.type) && ES.onSeg(x, y, [i.n[8], i.n[9], i.n[10], i.n[11]]))) return;
+  if (termAt(x, y)) return; // konec na svorce = spoj se svorkou, ne odbočka z vodiče, který přes ni prochází
+  const host = doc.items.filter(i => ES.WIRE.has(i.type) && ES.onSeg(x, y, [i.n[8], i.n[9], i.n[10], i.n[11]]));
+  if (!host.length) return;
+  // souběh (vodič položený podél jiného) spojením není – odbočka musí být napříč
+  if (seg && host.every(i => (i.n[10] - i.n[8]) * (seg[3] - seg[1]) === (i.n[11] - i.n[9]) * (seg[2] - seg[0]))) return;
   const nd = ES.newItem(ES.NODE, x, y); nd.n[10] = x; nd.n[11] = y; doc.items.push(nd);
 }
 // uzly, u kterých po smazání nezůstal žádný konec vodiče, jsou zbytečné
@@ -461,6 +465,7 @@ async function editProps(it) {
     if (d.sub === 'ton' || d.sub === 'toff' || d.sub === 'stair' || d.click === 'pir') h += f(d.sub === 'stair' || d.click === 'pir' ? 'Doba svitu (s)' : 'Čas (s)', 't5', it.t[5], 'type="number" min="0" step="0.1"');
     h += powerFields(d, it, f);
     if (d.kind === 'hsw' || d.home) h += '<p>' + esc(d.norm || '') + '</p>';
+    if (d.tariff) h += '<p>Moderní (chytrý) elektroměr s měřením ve dvou tarifech: <b>VT</b> – vysoký (denní) a <b>NT</b> – nízký tarif (noční proud). Tarif přepíná distributor signálem HDO; výstupní relé R1–R2 je v NT sepnuté a ovládá cívku instalačního stykače spotřebičů na NT (bojler, akumulační kamna). Elektroměry: ČSN EN IEC 62052-11, ČSN EN IEC 62053-21, ČSN EN 50470-3 (MID); tarifní řízení: ČSN EN 62054-11 / -21. V simulaci klik = signál HDO.</p>';
     if (d.kind === 'mstarter' || d.kind === 'thermal') h += f('Nastavení Iᵣ (A)', 't8', it.t[8], 'type="number" min="0" step="0.1" placeholder="jen ruční vybavení"') + '<p>Proud, na který je nastavená tepelná spoušť (obvykle jmenovitý proud motoru). Při 6× Iᵣ vybaví asi za 15 s.</p>';
     if (d.kind === 'motor3' || d.kind === 'motorYD' || d.kind === 'motor1') h += f('Výkon motoru (kW)', 't9', it.t[9], 'type="number" min="0.1" step="0.1" placeholder="' + (d.kind === 'motor1' ? '0,75' : d.kind === 'motorYD' ? '7,5' : '4') + '"');
     if (d.kind === 'trafo') h += f('Primární napětí (V)', 't6', it.t[6] || '230', 'type="number" min="1"') + f('Sekundární napětí (V)', 't7', it.t[7] || '24', 'type="number" min="1"');
@@ -517,8 +522,8 @@ function connectPick(c) {
   if (!tool.a) { tool.a = c; hint('Začátek: ' + c.p[0] + ', ' + c.p[1] + ' – teď klepněte na druhý bod.'); render(); return; }
   if (tool.a.p[0] === c.p[0] && tool.a.p[1] === c.p[1]) { tool.a = null; hint(HINTS.connect); render(); return; }
   pushUndo(); const t0 = Date.now();
-  const res = R.rerouteSchema(doc, [[tool.a.p, c.p, tool.type]]); tool.a = c.term ? c : null; touch(); render();
-  hint((c.term ? 'Propojeno – pokračujte na další svorku (hřeben), klepnutím do prázdna ukončíte. ' : 'Propojeno. ') + 'Přepočítáno ' + res.wires + ' úseků vodičů za ' + (Date.now() - t0) + ' ms' + (res.failed ? ', ' + res.failed + '× nešlo vést bez překryvu' : ' bez překryvů') + (res.conflicts ? ', ' + res.conflicts + ' svorek leží přímo na sobě' : '') + '.');
+  const res = R.rerouteSchema(doc, [[tool.a.p, c.p, tool.type]]); tool.a = null; touch(); render();
+  hint('Propojeno. Přepočítáno ' + res.wires + ' úseků vodičů za ' + (Date.now() - t0) + ' ms' + (res.failed ? ', ' + res.failed + '× nešlo vést bez překryvu' : ' bez překryvů') + (res.conflicts ? ', ' + res.conflicts + ' svorek leží přímo na sobě' : '') + '.');
 }
 function setAutoRoute(v) {
   autoRoute = v; try { localStorage.setItem('es.autoroute', v ? '1' : '0'); } catch (e) {}
@@ -546,10 +551,10 @@ cv.addEventListener('mousedown', e => {
     pushUndo(); const pts = route(tool.start, [x, y], tool.flip || e.shiftKey);
     const end = connectsAt(x, y), onTerm = termAt(x, y);
     for (let i = 1; i < pts.length; i++) addWire(tool.type, pts[i - 1], pts[i]);
-    if (tool.type !== 10106) for (const q of [pts[0], [x, y]]) autoNode(q[0], q[1]);
-    // na svorce vodič pokračuje (hřebenové zapojení), konec = znovu klik na tutéž svorku, dvojklik nebo Esc; na vodiči končí
-    tool.start = end && !onTerm ? null : [x, y]; touch(); render();
-    if (onTerm) hint('Svorka připojena. Klikněte na další svorku (hřeben – svorkami, na které nekliknete, vodič jen prochází), nebo ukončete: znovu klik na tuto svorku, dvojklik nebo Esc.');
+    if (tool.type !== 10106) { const s0 = [...pts[0], ...pts[1]], s1 = [...pts[pts.length - 2], ...pts[pts.length - 1]]; autoNode(pts[0][0], pts[0][1], s0); autoNode(x, y, s1); }
+    // vodič vždy spojuje jen dva body: na svorce nebo na vodiči končí, další spoj se začne novým klikem
+    tool.start = end ? null : [x, y]; touch(); render();
+    if (onTerm) hint('Spojeno – vodič vede jen mezi těmito dvěma body (svorkami, přes které prochází, se nespojí). Další spoj začněte klikem na svorku.');
     return;
   }
   if (tool.kind === 'gfx') { drag = { kind: 'gfx', x0: x, y0: y }; return; }
@@ -738,6 +743,7 @@ function probe(hv) {
   if (c.d.kind === 'rcd') return nm + 'unikající proud ' + Math.round((M.res || 0) * 1000) + ' mA (vybaví nad 30 mA), proud ' + A(M.I) + '. Klik na zapnutý chránič = tlačítko TEST.';
   if (c.d.kind === 'socket') return nm + 'zásuvka: L–N ' + Math.round(M.U || 0) + ' V' + (M.U > 5 && !M.Lok ? ' (fáze na N dutince!)' : '') + ', ochranný kolík ' + (M.pe ? 'připojen ✓' : 'NEPŘIPOJEN ✗') + (sim.plug[hover.uid] ? ', spotřebič ' + M.P + ' W, ' + A(M.I) : ', volná (kliknutím zapojíte spotřebič)');
   if (c.d.kind === 'socket3' || c.d.kind === 'load3') return nm + (c.d.kind === 'socket3' ? 'zásuvka 400 V: ' : 'spotřebič 3f: ') + 'L1–L2 ' + Math.round(M.Ull ? M.Ull[0] : 0) + ' V, L2–L3 ' + Math.round(M.Ull ? M.Ull[1] : 0) + ' V, L3–L1 ' + Math.round(M.Ull ? M.Ull[2] : 0) + ' V, sled fází ' + (M.rot === 'R' ? 'pravotočivý ✓' : M.rot === 'L' ? 'LEVOTOČIVÝ ✗ (prohoďte dvě fáze)' : 'nelze určit') + ', N ' + (M.n ? '✓' : '✗') + ', PE ' + (M.pe ? '✓' : '✗') + (sim.plug[hover.uid] ? ', zapnuto ' + M.P + ' W, ' + A(M.I) + ' na fázi' : ', vypnuto (kliknutím zapnete)');
+  if (c.d.kind === 'emeter3' && c.d.tariff) return nm + 'dvoutarifní elektroměr: ' + (M.nt ? 'NT – noční proud, relé HDO sepnuto' : 'VT – denní tarif, relé HDO rozepnuto') + ', ' + Math.round(M.P || 0) + ' W, VT ' + (M.WhVT || 0).toFixed(3).replace('.', ',') + ' Wh, NT ' + (M.WhNT || 0).toFixed(3).replace('.', ',') + ' Wh. Klik = signál HDO (přepnutí tarifu).';
   if (c.d.kind === 'emeter3') return nm + 'elektroměr 3f: ' + Math.round(M.P || 0) + ' W, L1 ' + A((M.I || [])[0]) + ', L2 ' + A((M.I || [])[1]) + ', L3 ' + A((M.I || [])[2]) + ', odečteno ' + (M.Wh || 0).toFixed(3).replace('.', ',') + ' Wh';
   if (c.d.kind === 'emeter') return nm + 'elektroměr: ' + Math.round(M.U || 0) + ' V, ' + A(M.I) + ', činný výkon ' + Math.round(M.P || 0) + ' W, odečteno ' + (M.Wh || 0).toFixed(3).replace('.', ',') + ' Wh';
   if (c.d.kind === 'hsw') return nm + c.d.name + ' – poloha ' + (sim.sw[hover.uid] | 0) + (c.d.bits === 2 ? ' (klik vlevo/vpravo = levá/pravá kolébka)' : '');
@@ -993,7 +999,7 @@ const rmouse = { x: 0, y: 0, in: false };
 const RHINT = {
   select: 'Realita: tažením ze svorky na svorku natáhnete vodič (klikáním do prázdna lomíte). Přístroj přesunete tažením, dvojklik = vlastnosti a barva, ⌫ = smazat. Barvu vodiče zvolíte v paletě.',
   place: 'Kliknutím vložíte přístroj (pomocný kontakt položte přímo na stykač, kontaktní blok na tlačítko). Esc = konec.',
-  wire: 'Vodič: klik na svorku = začátek, kliky do prázdna = lomové body, klik na další svorku = připojit a pokračovat (hřebenové zapojení). Konec: znovu klik na poslední svorku, dvojklik nebo Esc. Tažení ze svorky na svorku = jeden vodič. ⌫ = zrušit poslední lom.',
+  wire: 'Vodič: klik na svorku = začátek, kliky do prázdna = lomové body, klik na další svorku = konec (vodič spojí vždy jen dvě svorky). ⌫ = zrušit poslední lom, Esc = zrušit.',
   sim: 'SIMULACE PODLE REALITY: proud teče jen nataženými vodiči. Klikáním ovládáte jističe, tlačítka a přepínače (Shift = tlačítko zůstane stisknuté). Najetím na svorku změříte napětí.',
 };
 if (window.matchMedia && matchMedia('(pointer: coarse)').matches) {
@@ -1056,7 +1062,7 @@ function rSetTool(t) {
   if (mode === 'real') { cv.style.cursor = t.kind === 'select' ? 'default' : 'crosshair'; hint(RHINT[t.kind]); render(); }
 }
 // prvek, který se ovládá kliknutím na přístroj v simulaci
-function pressTarget(g) { return g.items.find(i => { const d = ES.getDef(i.type); return d.click || ['breaker', 'mswitch', 'mstarter', 'rcd', 'fuse', 'thermal', 'hsw', 'socket', 'socket3', 'load3'].includes(d.kind); }); }
+function pressTarget(g) { return g.items.find(i => { const d = ES.getDef(i.type); return d.click || d.tariff || ['breaker', 'mswitch', 'mstarter', 'rcd', 'fuse', 'thermal', 'hsw', 'socket', 'socket3', 'load3'].includes(d.kind); }); }
 function rDown(e) {
   const [x, y] = rToWorld(e); rmouse.x = x; rmouse.y = y; rmouse.in = true;
   if (e.button === 1 || spaceDown) { rdrag = { kind: 'pan', cx: e.clientX, cy: e.clientY }; cv.style.cursor = 'grabbing'; return; }
@@ -1115,8 +1121,6 @@ function rUp(e) {
 function rFinish(t, cont) {
   const f = rdraft.from, p = rdraft.p; rdraft = null;
   if (t.key === f.key) return;
-  // klikání: vodič pokračuje z této svorky na další (hřebenové zapojení); konec = znovu klik na svorku, dvojklik, Esc
-  if (cont) { rdraft = { from: t, p: [], down: null }; hint('Svorka připojena – klikněte na další svorku (hřeben), nebo ukončete: znovu klik na tuto svorku, dvojklik, Esc.'); }
   pushUndo(); const w = { a: [f.it.uid, f.ti], b: [t.it.uid, t.ti], c: wcol, p }; doc.real.wires.push(w);
   if (wcol === 'auto') { const [c, why] = R.normColor(doc, w, wnorm); w.c = c; hint('Vodič: ' + why + ' → ' + (R.WNAME[c] || c) + ' (' + R.NORMS[wnorm].short + ')'); }
   rbad = null;

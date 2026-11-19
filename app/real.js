@@ -97,7 +97,7 @@ function layout(g) {
   }
   if (ty === 'socket3') { w = 70; h = 76; [0, 1, 2, 3, 4].forEach(i => add(g.main, i, 15 + 10 * i, 70, [0, 1])); return { w, h, T }; }
   if (ty === 'load3') { w = 96; h = 84; [0, 1, 2, 3, 4].forEach(i => add(g.main, i, 28 + 10 * i, 78, [0, 1])); return { w, h, T }; }
-  if (ty === 'emeter3') { w = 108; h = 100; [[0, 12], [4, 24], [1, 36], [5, 48], [2, 60], [6, 72], [3, 84], [7, 96]].forEach(([ti, x]) => add(g.main, ti, x, 92, [0, 1])); return { w, h, T }; }
+  if (ty === 'emeter3') { const tf = ES.getDef(g.main.type).tariff; w = tf ? 132 : 108; h = 100; [[0, 12], [4, 24], [1, 36], [5, 48], [2, 60], [6, 72], [3, 84], [7, 96]].concat(tf ? [[8, 112], [9, 122]] : []).forEach(([ti, x]) => add(g.main, ti, x, 92, [0, 1])); return { w, h, T }; }
   if (ty === 'heater') { w = 50; h = 92; [0, 1, 2].forEach(i => add(g.main, i, 13 + 12 * i, 86, [0, 1])); return { w, h, T }; }
   if (ty === 'fan') { w = 52; h = 64; [0, 1, 2].forEach(i => add(g.main, i, 14 + 12 * i, 58, [0, 1])); return { w, h, T }; }
   if (ty === 'light') { w = 56; h = 62; [0, 1, 2].forEach(i => add(g.main, i, 16 + 12 * i, 6, [0, -1])); return { w, h, T }; }
@@ -546,8 +546,11 @@ function drawDevice(c, g, S) {
     box(c, 1, h - 16, w - 2, 15, 1.2, shade(base, -0.08), 0.3);
     box(c, 10, 10, w - 20, 18, 1.5, '#1c2a1d', 0.4);
     const M = S.meas || {};
-    txt(c, S.sim ? (M.Wh || 0).toFixed(3).replace('.', ',') : '0,000', w - 26, 19.5, 6.5, S.sim ? '#7dff8a' : '#3d5a3f', 'right', true); txt(c, 'Wh', w - 14, 21, 2.6, '#7dff8a', 'right');
-    txt(c, 'kWh  3×230/400 V  10(80) A', w / 2, 33, 2.6, ink);
+    txt(c, S.sim ? (M.Wh || 0).toFixed(3).replace('.', ',') : '0,000', ES.getDef(g.main.type).tariff ? w - 50 : w - 26, 19.5, 6.5, S.sim ? '#7dff8a' : '#3d5a3f', 'right', true); txt(c, 'Wh', ES.getDef(g.main.type).tariff ? w - 38 : w - 14, 21, 2.6, '#7dff8a', 'right');
+    const tf = ES.getDef(g.main.type).tariff;
+    txt(c, tf ? 'kWh  3×230/400 V  5(80) A  ·  VT/NT  ·  MID B' : 'kWh  3×230/400 V  10(80) A', w / 2, 33, 2.6, ink);
+    if (tf) { const nt = S.sim && M.nt; box(c, w - 34, 10, 24, 18, 1.5, nt ? '#1d4d2a' : '#4d3a12', 0.4); txt(c, nt ? 'NT' : 'VT', w - 22, 17, 5, nt ? '#7dff8a' : '#ffc75a', 'center', true); txt(c, nt ? 'noční proud' : 'denní tarif', w - 22, 24.5, 2.1, '#ddd', 'center');
+      txt(c, 'relé HDO', w - 17, h - 22, 2.2, ink, 'center', true); if (S.sim) txt(c, 'VT ' + (M.WhVT || 0).toFixed(3).replace('.', ',') + '  NT ' + (M.WhNT || 0).toFixed(3).replace('.', ',') + ' Wh', w / 2, 55, 2.3, ink, 'center'); }
     if (S.sim) { txt(c, Math.round(M.P || 0) + ' W', w / 2, 42, 4, '#0a66e8', 'center', true); txt(c, 'L1 ' + fmtA((M.I || [])[0]) + '  L2 ' + fmtA((M.I || [])[1]) + '  L3 ' + fmtA((M.I || [])[2]), w / 2, 49, 2.4, ink); }
     nameplate(c, g.name, w / 2, 60, 16, base);
     for (const t of L.T) txt(c, t.lab, t.x, t.y - 6, 2.5, inkOn(shade(base, -0.08)), 'center', true);
@@ -948,7 +951,7 @@ const PRESETS = [
   ['Motory', [['Třífázový motor', [1000]], ['Motor Y/Δ (6 svorek)', [1001]], ['Jednofázový motor', [1002]]]],
   ['Měření', [['Voltmetr', [20001]], ['Ampérmetr', [20002]]]],
   // ---- domovní instalace
-  ['Rozvodnice', [['Přípojka 230 V (L N PE)', [3008]], ['Přípojka 3×400/230 V', [3007]], ['Elektroměr 1f', [20116]], ['Elektroměr 3f', [20130]], ['Jistič 1P (B10 světla / B16 zásuvky)', [6010]], ['Jistič 3P', [6009]], ['Hlavní vypínač 3P', [2004]],
+  ['Rozvodnice', [['Přípojka 230 V (L N PE)', [3008]], ['Přípojka 3×400/230 V', [3007]], ['Elektroměr 1f', [20116]], ['Elektroměr 3f', [20130]], ['Elektroměr 3f dvoutarifní VT/NT (HDO)', [20139]], ['Jistič 1P (B10 světla / B16 zásuvky)', [6010]], ['Jistič 3P', [6009]], ['Hlavní vypínač 3P', [2004]],
     ['Proudový chránič 2P 30 mA', [20005]], ['Proudový chránič 4P 30 mA', [20006]]], 'home', 'ČSN 33 2000-4-41 · ČSN 33 2000-5-53'],
   ['Spínače', [['Spínač č. 1 (jednopólový)', [20101]], ['Spínač č. 2 (dvoupólový)', [20102]], ['Spínač č. 5 (sériový)', [20105]], ['Spínač č. 6 (střídavý / schodišťový)', [20106]],
     ['Spínač č. 7 (křížový)', [20107]], ['Tlačítko č. 1/0 (zvonkové, ovladač)', [20108]]], 'home', 'řazení dle ČSN EN 60669-1'],
@@ -987,7 +990,8 @@ function wireFunc(doc) {
       const lab = String(it.t[2 + i] || (d.labels || [])[i] || '');
       if (lab === 'PE') peT[t] = 1; else if (/^N′?$/.test(lab) && d.kind !== 'load') nT[t] = 1;
       if (d.kind === 'supply') { bits[t] |= ES.POT[d.pots[i]]; return; }
-      if (POWER_KINDS.has(d.kind) || ((d.kind === 'breaker' || d.kind === 'fuse') && (d.n || 1) >= 3)) power[t] = 1;
+      if (d.tariff && i >= 8) control[t] = 1; // relé HDO spíná ovládací obvod (cívku stykače)
+      else if (POWER_KINDS.has(d.kind) || ((d.kind === 'breaker' || d.kind === 'fuse') && (d.n || 1) >= 3)) power[t] = 1;
       else if (CONTROL_KINDS.has(d.kind)) control[t] = 1;
     });
     if (d.kind === 'trafo') { bits[tn[2]] |= 256; bits[tn[3]] |= 512; }

@@ -26,7 +26,7 @@ function colorsByTerm(d, std) { const sc = R.scene(d), f = R.wireFunc(d), out = 
 { // 3f: zásuvka CEE a sporák L1/L2/L3
   const d = ES.parseCad(rd('ElectroSchool - domovni instalace 3f.cad')); const c = colorsByTerm(d, '60445');
   ok(c['-XS1:L1'] === '#7a4a22' && c['-XS1:L2'] === '#1b1b1b' && c['-XS1:L3'] === '#8d8d8d' && c['-XS1:N'] === '#2f80ed' && c['-XS1:PE'] === 'gnye', 'CEE zásuvka: L1 hnědá, L2 černá, L3 šedá, N modrá, PE zelenožlutá');
-  const c2 = colorsByTerm(d, '60204'); ok(c2['-KT1:1'] === '#d62828', 'EN 60204-1: výstup spínacích hodin k cívce = řídicí (červená)');
+  const c2 = colorsByTerm(d, '60204'); ok(c2['-P1:R2'] === '#d62828', 'EN 60204-1: výstup relé HDO elektroměru k cívce stykače = řídicí (červená)');
 }
 { // stejnosměrné řízení 24 V podle EN 60204-1 = tmavě modrá
   const d = { items: [], real: ES.emptyReal() }; const P = (t, n) => { const it = ES.newItem(t, 0, 0); it.t[0] = n; d.items.push(it); return it; };

@@ -199,6 +199,15 @@ const SYM = {
     T.push([9, 7.2, 'kWh 3~', 2.2, 'center']); T.push([-3.5, 6.5, it.t[0], 2.4, 'right']);
     if (S.sim && S.meas) T.push([21.5, 6.5, Math.round(S.meas.P) + ' W  ' + S.meas.Wh.toFixed(3).replace('.', ',') + ' Wh', 2, 'left', '#0a66e8']);
   },
+  emeter2t(c, it, d, S, T) { // dvoutarifní elektroměr + výstupní relé HDO (sepnuto v NT)
+    for (let i = 0; i < 4; i++) { line(c, i * 6, 0, i * 6, 2.5); line(c, i * 6, 9.5, i * 6, 12); }
+    c.fillStyle = '#fff'; c.fillRect(-2.5, 2.5, 33, 7); c.strokeRect(-2.5, 2.5, 33, 7); line(c, -2.5, 4.6, 22.5, 4.6); line(c, 22.5, 2.5, 22.5, 9.5);
+    T.push([10, 7.2, 'kWh 3~ VT/NT', 2, 'center']); T.push([-3.5, 6.5, it.t[0], 2.4, 'right']);
+    const nt = S.sim && S.meas && S.meas.nt;
+    line(c, 27, 0, 27, 3.5); line(c, 27, 8.5, 27, 12); if (nt) line(c, 27, 8.5, 27, 3.5); else line(c, 27, 8.5, 24.6, 3.9);
+    T.push([28.6, 3.4, 'HDO', 1.6, 'left', '#555']);
+    if (S.sim && S.meas) T.push([31, 6.5, (nt ? 'NT' : 'VT') + '  ' + Math.round(S.meas.P) + ' W  VT ' + S.meas.WhVT.toFixed(3).replace('.', ',') + ' / NT ' + S.meas.WhNT.toFixed(3).replace('.', ',') + ' Wh', 2, 'left', nt ? '#2e9e3e' : '#c25400']);
+  },
   socket3(c, it, d, S, T) { // zásuvka 400 V (CEE) – pětikolíková
     for (const x of [0, 6, 12, 18]) line(c, x, 0, x, 4.6);
     line(c, 0, 4.6, 18, 4.6); line(c, 9, 4.6, 9, 7.2);

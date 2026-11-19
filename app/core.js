@@ -174,6 +174,9 @@ def(20130, home({ name: 'Elektroměr 3f', pre: '-P', kind: 'emeter3', sym: 'emet
 HCAT(HR).items.push(2004);
 const cee = (code, A) => def(code, home({ name: 'Zásuvka 400 V ' + A + ' A (CEE 5p)', pre: '-XS', kind: 'socket3', sym: 'socket3', amp: A, labels: ['L1', 'L2', 'L3', 'N', 'PE'], terms: [0, 6, 12, 18, 24].map(x => [x, 0]), bbox: [-6, -3, 27, 15], defaults: { 9: '3000' } }, HZ));
 cee(20131, 16); cee(20132, 32);
+// moderní (chytrý) elektroměr se dvěma tarify: VT / NT (noční proud), přepínání signálem HDO, výstupní relé pro spotřebiče na NT
+def(20139, home({ name: 'Elektroměr 3f dvoutarifní VT/NT s relé HDO', pre: '-P', kind: 'emeter3', tariff: true, sym: 'emeter2t', labels: ['1', '4', '7', '10', '3', '6', '9', '12', 'R1', 'R2'],
+  terms: [...tb(4, 12), [27, 0], [27, 12]], poles: [...pp(4), { a: 8, b: 9, hdo: true }], bbox: [-12, -3, 33, 15] }, HR));
 def(20133, home({ name: 'Sporák / varná deska 3f', pre: '-E', kind: 'load3', sym: 'load3', labels: ['L1', 'L2', 'L3', 'N', 'PE'], terms: [0, 6, 12, 18, 24].map(x => [x, 0]), bbox: [-12, -3, 27, 12], defaults: { 9: '7000' } }, HL));
 def(20134, home({ name: 'Ohřívač vody (bojler)', pre: '-E', kind: 'load', sub: 'heater', sym: 'load', labels: ['L', 'N', 'PE'], terms: [[0, 0], [0, 12], [6, 12]], bbox: [-15, -3, 9, 15], defaults: { 9: '2000' } }, HL));
 def(20135, home({ name: 'Ventilátor', pre: '-M', kind: 'load', sub: 'fan', sym: 'load', labels: ['L', 'N', 'PE'], terms: [[0, 0], [0, 12], [6, 12]], bbox: [-15, -3, 9, 15], defaults: { 9: '30' } }, HL));
@@ -229,11 +232,13 @@ function parseCad(text) {
 function splitAtTerms(doc) {
   const terms = [];
   for (const it of doc.items) if (!WIRE.has(it.type) && it.type !== NODE) for (const p of termsOf(it)) terms.push(p);
-  const add = [];
+  const add = [], ws0 = doc.items.filter(i => WIRE.has(i.type) && i.type !== 10106);
+  const colin = (a, b) => (a.n[10] - a.n[8]) * (b.n[11] - b.n[9]) === (a.n[11] - a.n[9]) * (b.n[10] - b.n[8]);
   for (const w of doc.items) {
     if (!WIRE.has(w.type)) continue;
     const seg = [w.n[8], w.n[9], w.n[10], w.n[11]];
-    const cut = terms.filter(([x, y]) => onSeg(x, y, seg)).sort((a, b) => Math.hypot(a[0] - seg[0], a[1] - seg[1]) - Math.hypot(b[0] - seg[0], b[1] - seg[1]));
+    const pts0 = terms.slice(); if (w.type !== 10106) for (const v of ws0) if (v !== w && colin(v, w)) pts0.push([v.n[8], v.n[9]], [v.n[10], v.n[11]]);
+    const cut = pts0.filter(([x, y]) => onSeg(x, y, seg)).sort((a, b) => Math.hypot(a[0] - seg[0], a[1] - seg[1]) - Math.hypot(b[0] - seg[0], b[1] - seg[1]));
     const uniq = cut.filter((p, i) => !i || p[0] !== cut[i - 1][0] || p[1] !== cut[i - 1][1]);
     if (!uniq.length) continue;
     const pts = [...uniq, [seg[2], seg[3]]];
@@ -318,8 +323,8 @@ function buildNets(doc) {
   const uni = (a, b) => { a = find(a); b = find(b); if (a !== b) par[a] = b; };
   const ws = wiresOf(doc);
   for (const w of ws) uni(pt(w[0], w[1]), pt(w[2], w[3]));
-  // Bod uvnitř vodiče se s ním spojí jen tehdy, je-li to uzel (tečka), svorka součástky,
-  // konec souběžného (překrývajícího se) vodiče nebo spojnice GRAFCETu. Pouhé křížení ani
+  // Bod uvnitř vodiče se s ním spojí jen tehdy, je-li to uzel (tečka) nebo spojnice GRAFCETu.
+  // Souběžné (překrývající se) vodiče se nespojují – vodič spojuje jen své dva konce. Pouhé křížení ani
   // dotyk tvaru T bez tečky spojení není – stejně jako v CADe_SIMU.
   // Svorka ležící uprostřed vodiče se s ním NEspojí: vodič spojuje vždy jen své dva konce
   // (vodič natažený přes více svorek by jinak udělal zkrat). Starší soubory z CADe_SIMU, které
@@ -333,7 +338,7 @@ function buildNets(doc) {
   const colin = (v, w) => (v[2] - v[0]) * (w[3] - w[1]) === (v[3] - v[1]) * (w[2] - w[0]);
   for (const [k, i] of idx) {
     const [x, y] = k.split(',').map(Number), ends = endsAt.get(k) || [];
-    for (const w of ws) if (onSeg(x, y, w) && (hard.has(k) || ends.some(v => colin(v, w) || (v[4].type === 10106 && w[4].type === 10106)))) uni(i, pt(w[0], w[1]));
+    for (const w of ws) if (onSeg(x, y, w) && (hard.has(k) || ends.some(v => v[4].type === 10106 && w[4].type === 10106))) uni(i, pt(w[0], w[1]));
   }
   const ids = new Map(), ofKey = new Map(); let count = 0;
   for (const [k, i] of idx) { const r = find(i); if (!ids.has(r)) ids.set(r, count++); ofKey.set(k, ids.get(r)); }
@@ -377,7 +382,7 @@ function secondsOf(it) { const a = parseFloat(it.t[4]) || 0, b = parseFloat(it.t
 
 function simStart(doc, real) {
   const nets = real ? buildRealNets(doc) : buildNets(doc);
-  const st = { doc, nets, t: 0, coil: {}, man: {}, trip: {}, vars: {}, timers: {}, on: {}, motor: {}, brk: {}, stage: {}, latch: {}, cyl: {}, blown: {}, volt: {}, lvl: {}, heat: {}, meas: {}, trafoV: {}, trafoP: {}, sw: {}, plug: {}, pulse: {}, pulsePrev: {}, stair: {}, pir: {}, energy: {}, tbitV: {}, trafos: [], fineV: new Map(), netPot: new Int32Array(nets.count), short: false, msg: '', comps: [] };
+  const st = { doc, nets, t: 0, coil: {}, man: {}, trip: {}, vars: {}, nt: {}, timers: {}, on: {}, motor: {}, brk: {}, stage: {}, latch: {}, cyl: {}, blown: {}, volt: {}, lvl: {}, heat: {}, meas: {}, trafoV: {}, trafoP: {}, sw: {}, plug: {}, pulse: {}, pulsePrev: {}, stair: {}, pir: {}, energy: {}, tbitV: {}, trafos: [], fineV: new Map(), netPot: new Int32Array(nets.count), short: false, msg: '', comps: [] };
   for (const it of doc.items) {
     const d = getDef(it.type);
     if (!d.kind || d.kind === 'wire' || d.kind === 'node' || d.kind === 'gfx' || d.kind === 'text') continue;
@@ -401,7 +406,8 @@ function poleClosed(st, c, p) {
     case 'fuse': return !st.blown[c.it.uid];
     case 'thermal': return true;
     case 'breaker': case 'mswitch': case 'mstarter': case 'rcd': return !!st.brk[c.it.uid];
-    case 'meter': case 'emeter': case 'emeter3': case 'clamp': return true;
+    case 'emeter3': return p.hdo ? !!st.nt[c.it.uid] : true;
+    case 'meter': case 'emeter': case 'clamp': return true;
     case 'hsw': { const on = ((st.sw[c.it.uid] | 0) >> (p.bit || 0)) & 1; return p.nc ? !on : !!on; }
     case 'contactor': a = !!st.coil[c.key]; break;
     default:
@@ -416,6 +422,7 @@ function isActuated(st, c) { // pro kreslení
   if (d.kind === 'breaker' || d.kind === 'mswitch' || d.kind === 'mstarter' || d.kind === 'rcd') return !!st.brk[c.it.uid];
   if (d.kind === 'contactor') return !!st.coil[c.key];
   if (d.kind === 'hsw') return !!st.sw[c.it.uid];
+  if (d.tariff) return !!st.nt[c.it.uid];
   if (d.kind === 'socket' || d.kind === 'socket3' || d.kind === 'load3') return !!st.plug[c.it.uid];
   if (d.kind === 'thermal') return !!st.trip[c.key];
   if (d.kind === 'fuse') return !!st.blown[c.it.uid];
@@ -440,7 +447,7 @@ function solve(st) {
   for (const c of st.comps) if (c.d.poles) c.d.poles.forEach((p, pi) => {
     if (!poleClosed(st, c, p)) return;
     const a = find(c.tn[p.a]), b = find(c.tn[p.b]); if (a !== b) par[a] = b;
-    if (MEAS.has(c.d.kind)) meas.push({ c, pi, p });
+    if (MEAS.has(c.d.kind) && !p.hdo) meas.push({ c, pi, p });
     else { const x = findF(c.tn[p.a]), y = findF(c.tn[p.b]); if (x !== y) parF[x] = y; }
   });
   const pot = new Int32Array(n), potF = new Int32Array(n);
@@ -673,7 +680,8 @@ function measure(st, s, net, dt) {
       const n = V(c.tn[3]) || [0, 0]; let P = 0; const I = [];
       for (let i = 0; i < 3; i++) { const a = V(c.tn[i]), j = J[i]; I.push(cabs(j)); if (a && j) P += Math.abs((a[0] - n[0]) * j[0] + (a[1] - n[1]) * j[1]); }
       st.energy[u] = (st.energy[u] || 0) + P * dt;
-      st.meas[u] = { I, P, Wh: st.energy[u] / 3600, U: (() => { const a = V(c.tn[0]), b = V(c.tn[1]); return a && b ? Math.hypot(a[0] - b[0], a[1] - b[1]) : 0; })() };
+      if (d.tariff) { const k = st.nt[u] ? 'NT' : 'VT'; st.energy[u + k] = (st.energy[u + k] || 0) + P * dt; }
+      st.meas[u] = { I, P, Wh: st.energy[u] / 3600, WhVT: (st.energy[u + 'VT'] || 0) / 3600, WhNT: (st.energy[u + 'NT'] || 0) / 3600, nt: !!st.nt[u], U: (() => { const a = V(c.tn[0]), b = V(c.tn[1]); return a && b ? Math.hypot(a[0] - b[0], a[1] - b[1]) : 0; })() };
     } else if (d.kind === 'socket3' || d.kind === 'load3') {
       const v = [0, 1, 2].map(i => V(c.tn[i]) || [0, 0]), P = pnum(c.it.t[9], d.kind === 'load3' ? 7000 : 3000), h = Math.sqrt(3) / 2;
       const Ull = [[0, 1], [1, 2], [2, 0]].map(([a, b]) => Math.hypot(v[a][0] - v[b][0], v[a][1] - v[b][1]));
@@ -769,6 +777,7 @@ function simPress(st, it, down, latch, part) {
   const c = st.comps.find(c => c.it === it); if (!c) return false;
   const d = c.d;
   if (d.kind === 'el') return root.ES.Elec ? root.ES.Elec.press(st, c, down, latch, part) : false;
+  if (d.tariff) { if (down) { st.nt[it.uid] = !st.nt[it.uid]; st.msg = 'HDO: ' + (st.nt[it.uid] ? 'nízký tarif NT (noční proud) – relé HDO sepnuto' : 'vysoký tarif VT – relé HDO rozepnuto'); } return true; }
   if (d.kind === 'hsw') { if (down) { const m = st.sw[it.uid] | 0; st.sw[it.uid] = d.bits === 2 ? (part === 0 || part === 1 ? m ^ (1 << part) : (m + 1) & 3) : m ^ 1; } return true; }
   if (d.kind === 'socket' || d.kind === 'socket3' || d.kind === 'load3') { if (down) st.plug[it.uid] = !st.plug[it.uid]; return true; }
   if (d.click === 'clock') return true;

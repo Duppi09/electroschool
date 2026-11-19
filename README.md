@@ -15,10 +15,15 @@ Obě verze sdílejí tentýž kód ve složce `app/`.
 open ios/ElectroSchool.xcodeproj   # aplikace pro iPadOS
 ```
 
-### Hřebenové zapojení a přesun zapojených prvků
+### Vodič spojuje vždy jen dva body, přesun zapojených prvků
 
-- **Hřeben:** vodič se při kreslení připojí ke každé svorce, na kterou klikneš, a pokračuje dál. Svorkami, na které nekliknete, jen prochází, takže nevznikne zkrat. Ukončíš ho dalším klikem na poslední bod, dvojklikem nebo Esc. Funguje ve schématu (i s automatickými vodiči: další klepnutí na svorku pokračuje, klepnutí do prázdna končí) i v Realitě.
+- **Jen dvě svorky:** vodič propojí vždy jen dva body, kde začíná a kde končí. Klik na svorku vodič ukončí a další spoj (1–2, 3–4 …) se začne novým klikem. Svorky, přes které vodič jen prochází, ani vodiče, se kterými se překrývá, se s ním nespojí, takže hřeben přes všechny svorky jističů nedělá zkrat. Odbočka z vodiče se spojí jen napříč a s tečkou. Starší soubory z CADe_SIMU, které na spojování souběhů stavěly, se při otevření rozdělí, takže zapojení zůstane, jak ho autor nakreslil.
+- **iPad (automatické vodiče):** zůstává vlastní logika, vodiče se po každém propojení dvou bodů přepočítají tak, aby se nepřekrývaly.
 - **Přesun zapojeného prvku:** po puštění se vodiče od jeho svorek po nejbližší svorku nebo odbočku samy přepočítají a vedou volnou pravoúhlou cestou. Ostatní vodiče zůstanou beze změny. Během tažení oranžové čárkované čáry ukazují, kam se vodiče připojí. Totéž platí pro posun šipkami.
+
+### Dvoutarifní elektroměr (noční proud, HDO)
+
+V domovní instalaci (Rozvodnice) je **Elektroměr 3f dvoutarifní VT/NT s relé HDO**. Jde o moderní chytrý elektroměr, který měří zvlášť VT (vysoký, denní tarif) a NT (nízký tarif, noční proud). Výstupní relé R1–R2 je v NT sepnuté a ovládá cívku instalačního stykače spotřebičů na NT, třeba bojleru. Normy: ČSN EN IEC 62052-11, ČSN EN IEC 62053-21, ČSN EN 50470-3 (MID), tarifní řízení ČSN EN 62054-11 / -21. V simulaci klik na elektroměr = signál HDO (přepnutí tarifu). Ukázka *Domovní instalace 3f* má bojler zapojený přes relé HDO.
 
 ### Elektrotechnika a Arduino
 
@@ -82,6 +87,7 @@ $JSC app/core.js app/real.js tools/domov3f_test.js
 $JSC app/calc.js tools/calc_test.js
 $JSC app/core.js app/real.js tools/reroute_test.js -- Priklady
 $JSC app/core.js app/elec.js tools/elec_test.js
+$JSC app/core.js tools/wires_test.js
 ```
 
 Ukázková schémata ve složce `Priklady/` (kromě souborů „ElectroSchool – …“) pocházejí z repozitáře [ELECTROALL/CADE-SIMU](https://github.com/ELECTROALL/CADE-SIMU).
