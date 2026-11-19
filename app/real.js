@@ -846,7 +846,7 @@ function rerouteSchema(doc, join) {
 }
 
 // Jádro trasování: netFn(it) -> (ti -> klíč sítě | null) nebo null; typeOf(klíč) -> typ vodiče.
-function routeSchema(doc, netFn, typeOf) {
+function routeSchema(doc, netFn, typeOf, links) {
   const G = 3, K = (x, y) => x + ',' + y;
   const comps = doc.items.filter(it => { const d = ES.getDef(it.type); return d.terms && d.terms.length; });
   const occ = new Map(), nets = new Map(); let conflicts = 0;
@@ -859,11 +859,11 @@ function routeSchema(doc, netFn, typeOf) {
       if (nn) { if (!nets.has(n)) nets.set(n, []); const a = nets.get(n); if (!a.some(p => p[0] === x && p[1] === y)) a.push([x, y]); }
     });
   }
-  for (const it of doc.items) if (ES.WIRE.has(it.type)) { // ponechané spojnice GRAFCET
+  for (const it of doc.items) if (ES.WIRE.has(it.type)) { // ponechané vodiče: GRAFCET nepřekročitelný, ostatní jen křížit
     const [x1, y1, x2, y2] = [it.n[8], it.n[9], it.n[10], it.n[11]];
     if (x1 !== x2 && y1 !== y2) continue;
-    const st = Math.max(1, Math.round(Math.hypot(x2 - x1, y2 - y1) / G));
-    for (let i = 0; i <= st; i++) mark(Math.round((x1 + (x2 - x1) * i / st) / G) * G, Math.round((y1 + (y2 - y1) * i / st) / G) * G, 'g', true, true, true);
+    const st = Math.max(1, Math.round(Math.hypot(x2 - x1, y2 - y1) / G)), g = it.type === 10106, hz = y1 === y2;
+    for (let i = 0; i <= st; i++) { const end = i === 0 || i === st; mark(Math.round((x1 + (x2 - x1) * i / st) / G) * G, Math.round((y1 + (y2 - y1) * i / st) / G) * G, 'g', g, g || end || hz, g || end || !hz); }
   }
   const body = new Set(); let bb = null;
   for (const it of doc.items) {
@@ -873,8 +873,8 @@ function routeSchema(doc, netFn, typeOf) {
   }
   if (!bb) return { wires: 0, failed: 0, conflicts, missing: [], extra: [] };
   const X0 = Math.floor(bb[0] / G) * G - 30, Y0 = Math.floor(bb[1] / G) * G - 30, X1 = bb[2] + 30, Y1 = bb[3] + 30;
-  const edges = [];
-  for (const [n, pts] of nets) {
+  const edges = links ? links.map((l, i) => ({ n: 'l' + i, a: l.a, b: l.b, len: Math.abs(l.a[0] - l.b[0]) + Math.abs(l.a[1] - l.b[1]) })) : [];
+  if (!links) for (const [n, pts] of nets) {
     if (pts.length < 2) continue;
     const inT = [0], rest = pts.map((_, i) => i).slice(1);
     while (rest.length) {
@@ -920,7 +920,7 @@ function routeSchema(doc, netFn, typeOf) {
     const cor = [path[0]];
     for (let i = 1; i < path.length - 1; i++) { const a = path[i - 1], b = path[i], c2 = path[i + 1]; if ((b[0] - a[0]) * (c2[1] - b[1]) !== (b[1] - a[1]) * (c2[0] - b[0])) cor.push(b); }
     cor.push(path[path.length - 1]);
-    const type = typeOf(e.n);
+    const type = links ? links[+e.n.slice(1)].type || 4000 : typeOf(e.n);
     for (let i = 1; i < cor.length; i++) {
       const a = cor[i - 1], b = cor[i], hz = a[1] === b[1]; addSeg(a, b, type);
       const st = Math.round((Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1])) / G);
@@ -930,6 +930,9 @@ function routeSchema(doc, netFn, typeOf) {
   }
   return { wires: count, failed, conflicts };
 }
+
+// Vede jen zadaná spojení [{a, b, type}] (body na mřížce); ostatní vodiče zůstanou a dají se jen křížit.
+function routeLinks(doc, links) { return links.length ? routeSchema(doc, () => null, () => 4000, links) : { wires: 0, failed: 0, conflicts: 0 }; }
 
 // ---------------------------------------------------------------- paleta (sestavy prvků)
 const PRESETS = [
@@ -1025,5 +1028,5 @@ function colorCheck(doc, std) {
   return bad;
 }
 
-ES.Real = { rerouteSchema, NORMS, normColor, colorCheck, wireFunc, WCOL, WNAME, PRESETS, devices, famOf, layout, scene, wirePts, routes, drawWire, drawDevice, drawScene, stateOf, termName, wiresFromSchema, compare, schemaFromReal, placeInSchema, presetDevice, isReal, colorFor };
+ES.Real = { rerouteSchema, routeLinks, NORMS, normColor, colorCheck, wireFunc, WCOL, WNAME, PRESETS, devices, famOf, layout, scene, wirePts, routes, drawWire, drawDevice, drawScene, stateOf, termName, wiresFromSchema, compare, schemaFromReal, placeInSchema, presetDevice, isReal, colorFor };
 })(typeof window !== 'undefined' ? window : globalThis);

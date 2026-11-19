@@ -45,7 +45,7 @@ const HINTS = {
   connect: 'Propojení: klepněte na první svorku (nebo vodič), pak na druhou. Všechny vodiče se pak přepočítají tak, aby se nepřekrývaly. Prst můžete držet a posouvat, bod se vybere až po zvednutí prstu. Klepnutí do prázdna / Esc = zrušit začátek.',
   select: 'Výběr: klik = vybrat, tažení = přesun (u úseku vodiče ho napojené vodiče následují), dvojklik = vlastnosti, R = otočit, ⌫ = smazat. Posun plátna: dva prsty / mezerník + tažení, zoom: gesto nebo ⌘ + kolečko.',
   place: 'Kliknutím vložíte součástku. R = otočit, Esc = konec.',
-  wire: 'Vodič: klik = začátek, další kliky = lomové body, konec na svorce nebo dvojklikem. Odbočka z vodiče vytvoří tečku; křížení bez tečky spojené není. Shift = obrátit lomení, Esc = konec.',
+  wire: 'Vodič: klik = začátek, další kliky = lomové body i svorky (hřebenové zapojení – svorkami, na které nekliknete, vodič jen prochází). Konec: znovu klik na poslední bod, dvojklik nebo Esc. Odbočka z vodiče vytvoří tečku; křížení bez tečky spojené není. Shift = obrátit lomení, Esc = konec.',
   gfx: 'Tažením nakreslíte tvar. Esc = konec.',
   text: 'Kliknutím umístíte text.',
   sim: 'SIMULACE: klikáním ovládáte jističe, tlačítka a spínače (Shift + klik = tlačítko zůstane stisknuté). Klik na tepelné relé = vybavení, na pojistku = přepálení/výměna. Najetím myší změříte napětí.',
@@ -116,6 +116,7 @@ function hit(x, y) {
   }
   return null;
 }
+function termAt(x, y) { for (const it of doc.items) if (!ES.WIRE.has(it.type) && it.type !== ES.NODE) for (const [tx, ty] of ES.termsOf(it)) if (tx === x && ty === y) return true; return false; }
 function connectsAt(x, y) {
   for (const it of doc.items) {
     if (ES.WIRE.has(it.type)) { const n = it.n; if ((n[8] === x && n[9] === y) || (n[10] === x && n[11] === y) || ES.onSeg(x, y, [n[8], n[9], n[10], n[11]])) return true; }
@@ -187,6 +188,7 @@ function render() {
     }
     if (tool.kind === 'place' && mouse.in) ES.drawItem(ctx, ES.newItem(tool.type, mouse.x, mouse.y, placeRot), { ghost: true });
     if (drag && drag.kind === 'gfx') { const g = ES.newItem(tool.type, drag.x0, drag.y0); g.n[10] = mouse.x; g.n[11] = mouse.y; ES.drawItem(ctx, g, {}); }
+    if (drag && drag.cplan) { ctx.save(); ctx.setLineDash([1.2, 0.9]); ctx.strokeStyle = '#e07b00'; ctx.lineWidth = 0.4; for (const l of compLinkPts(drag.cplan)) { ctx.beginPath(); ctx.moveTo(l.a[0], l.a[1]); ctx.lineTo(l.b[0], l.b[1]); ctx.stroke(); } ctx.restore(); }
     if (drag && drag.kind === 'band') { ctx.strokeStyle = '#0a66e8'; ctx.fillStyle = 'rgba(10,102,232,.1)'; ctx.lineWidth = 1 / view.s; const x = Math.min(drag.x0, mouse.rx), y = Math.min(drag.y0, mouse.ry), w = Math.abs(mouse.rx - drag.x0), h = Math.abs(mouse.ry - drag.y0); ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h); }
   }
   $('#pos').textContent = (sim ? 'čas ' + sim.t.toFixed(1) + ' s   ' : '') + 'x ' + mouse.x + '  y ' + mouse.y + '   ' + Math.round(view.s * 25) + ' %';
@@ -324,6 +326,41 @@ function wireDragApply(P, dx, dy) {
     }
   }
   ver++;
+}
+// Přesun zapojeného prvku: vodiče od jeho svorek po nejbližší svorku / odbočku se při puštění
+// přepočítají (vedou volnou cestou, ostatní vodiče zůstanou beze změny).
+function compMovePlan() {
+  const moved = doc.items.filter(i => sel.has(i.uid) && !ES.WIRE.has(i.type) && i.type !== ES.NODE && (ES.getDef(i.type).terms || []).length);
+  if (!moved.length) return null;
+  const K = (x, y) => x + ',' + y, wires = doc.items.filter(i => ROUTED_W.has(i.type) && !sel.has(i.uid));
+  const ends = new Map(); for (const w of wires) for (const e of [8, 10]) { const k = K(w.n[e], w.n[e + 1]); if (!ends.has(k)) ends.set(k, []); ends.get(k).push([w, e]); }
+  const termK = new Map(); for (const it of doc.items) if (!ES.WIRE.has(it.type) && it.type !== ES.NODE) ES.termsOf(it).forEach((p, ti) => termK.set(K(p[0], p[1]), [it, ti]));
+  const nodes = new Set(doc.items.filter(i => i.type === ES.NODE).map(i => K(i.n[8], i.n[9])));
+  const inner = (x, y) => wires.some(w => ES.onSeg(x, y, [w.n[8], w.n[9], w.n[10], w.n[11]]));
+  const used = new Set(), links = [];
+  for (const it of moved) ES.termsOf(it).forEach((p, ti) => {
+    for (const [w0, e0] of ends.get(K(p[0], p[1])) || []) {
+      if (used.has(w0)) continue;
+      const chain = [w0]; used.add(w0); let w = w0, cx = w0.n[18 - e0], cy = w0.n[19 - e0];
+      for (let g = 0; g < 1000; g++) {
+        const k = K(cx, cy), at = ends.get(k) || [];
+        if (termK.has(k) || nodes.has(k) || at.length !== 2 || inner(cx, cy)) break;
+        const nx = at.find(([ww]) => ww !== w); if (!nx || used.has(nx[0])) break;
+        w = nx[0]; chain.push(w); used.add(w); cx = w.n[18 - nx[1]]; cy = w.n[19 - nx[1]];
+      }
+      const far = termK.get(K(cx, cy));
+      links.push({ it, ti, chain, P: [cx, cy], far: far && sel.has(far[0].uid) ? far : null, type: w0.type });
+    }
+  });
+  if (!links.length) return null;
+  const rm = new Set(links.flatMap(l => l.chain)); doc.items = doc.items.filter(i => !rm.has(i));
+  return { links };
+}
+function compLinkPts(P) { return P.links.map(l => ({ a: ES.termsOf(l.it)[l.ti], b: l.far ? ES.termsOf(l.far[0])[l.far[1]] : l.P, type: l.type })).filter(l => l.a[0] !== l.b[0] || l.a[1] !== l.b[1]); }
+function compMoveEnd(P) {
+  const links = compLinkPts(P), res = R.routeLinks(doc, links);
+  pruneNodes(); for (const l of links) autoNode(l.b[0], l.b[1]);
+  if (res.failed) hint('Přesunuto. ' + res.failed + '× nešlo vodič vést volnou cestou – zkontrolujte ho.');
 }
 function wireDragEnd(P) {
   const all = [...P.orig.keys(), ...P.made];
@@ -480,8 +517,8 @@ function connectPick(c) {
   if (!tool.a) { tool.a = c; hint('Začátek: ' + c.p[0] + ', ' + c.p[1] + ' – teď klepněte na druhý bod.'); render(); return; }
   if (tool.a.p[0] === c.p[0] && tool.a.p[1] === c.p[1]) { tool.a = null; hint(HINTS.connect); render(); return; }
   pushUndo(); const t0 = Date.now();
-  const res = R.rerouteSchema(doc, [[tool.a.p, c.p, tool.type]]); tool.a = null; touch(); render();
-  hint('Propojeno. Přepočítáno ' + res.wires + ' úseků vodičů za ' + (Date.now() - t0) + ' ms' + (res.failed ? ', ' + res.failed + '× nešlo vést bez překryvu' : ' bez překryvů') + (res.conflicts ? ', ' + res.conflicts + ' svorek leží přímo na sobě' : '') + '.');
+  const res = R.rerouteSchema(doc, [[tool.a.p, c.p, tool.type]]); tool.a = c.term ? c : null; touch(); render();
+  hint((c.term ? 'Propojeno – pokračujte na další svorku (hřeben), klepnutím do prázdna ukončíte. ' : 'Propojeno. ') + 'Přepočítáno ' + res.wires + ' úseků vodičů za ' + (Date.now() - t0) + ' ms' + (res.failed ? ', ' + res.failed + '× nešlo vést bez překryvu' : ' bez překryvů') + (res.conflicts ? ', ' + res.conflicts + ' svorek leží přímo na sobě' : '') + '.');
 }
 function setAutoRoute(v) {
   autoRoute = v; try { localStorage.setItem('es.autoroute', v ? '1' : '0'); } catch (e) {}
@@ -507,10 +544,13 @@ cv.addEventListener('mousedown', e => {
     if (!tool.start) { tool.start = [x, y]; render(); return; }
     if (tool.start[0] === x && tool.start[1] === y) { tool.start = null; render(); return; }
     pushUndo(); const pts = route(tool.start, [x, y], tool.flip || e.shiftKey);
-    const end = connectsAt(x, y);
+    const end = connectsAt(x, y), onTerm = termAt(x, y);
     for (let i = 1; i < pts.length; i++) addWire(tool.type, pts[i - 1], pts[i]);
     if (tool.type !== 10106) for (const q of [pts[0], [x, y]]) autoNode(q[0], q[1]);
-    tool.start = end ? null : [x, y]; touch(); render(); return;
+    // na svorce vodič pokračuje (hřebenové zapojení), konec = znovu klik na tutéž svorku, dvojklik nebo Esc; na vodiči končí
+    tool.start = end && !onTerm ? null : [x, y]; touch(); render();
+    if (onTerm) hint('Svorka připojena. Klikněte na další svorku (hřeben – svorkami, na které nekliknete, vodič jen prochází), nebo ukončete: znovu klik na tuto svorku, dvojklik nebo Esc.');
+    return;
   }
   if (tool.kind === 'gfx') { drag = { kind: 'gfx', x0: x, y0: y }; return; }
   if (tool.kind === 'text') {
@@ -534,7 +574,7 @@ window.addEventListener('mousemove', e => {
     else if (drag.kind === 'move') {
       const dx = mouse.x - drag.lx, dy = mouse.y - drag.ly;
       if (dx || dy) {
-        if (!drag.moved) { pushUndo(); drag.moved = true; drag.plan = wireDragPlan(); }
+        if (!drag.moved) { pushUndo(); drag.moved = true; drag.plan = wireDragPlan(); if (!drag.plan) drag.cplan = compMovePlan(); }
         if (drag.plan) wireDragApply(drag.plan, mouse.x - drag.x0, mouse.y - drag.y0); else moveItems(dx, dy);
         drag.lx = mouse.x; drag.ly = mouse.y;
       }
@@ -558,7 +598,7 @@ window.addEventListener('mouseup', e => {
   const d = drag; drag = null;
   if (d.kind === 'pan') cv.style.cursor = tool.kind === 'select' ? 'default' : 'crosshair';
   if (d.kind === 'conn') { const [rx, ry] = toWorld(e); cand = pickPoint(rx, ry); connectPick(cand); return; }
-  if (d.kind === 'move' && d.moved) { if (d.plan) wireDragEnd(d.plan); touch(); }
+  if (d.kind === 'move' && d.moved) { if (d.plan) wireDragEnd(d.plan); if (d.cplan) compMoveEnd(d.cplan); touch(); }
   if (d.kind === 'band') {
     const x0 = Math.min(d.x0, mouse.rx), y0 = Math.min(d.y0, mouse.ry), x1 = Math.max(d.x0, mouse.rx), y1 = Math.max(d.y0, mouse.ry);
     if (x1 - x0 > 0.5 || y1 - y0 > 0.5) for (const it of doc.items) { if (bandHits(it, x0, y0, x1, y1)) sel.add(it.uid); }
@@ -667,7 +707,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'delete' || k === 'backspace') { e.preventDefault(); del(); }
   else if (k === 'r' && !mod) rotateSel();
   else if (k === 'w' && !mod) setTool({ kind: 'wire', type: 4000 });
-  else if (k.startsWith('arrow') && sel.size) { e.preventDefault(); pushUndo(); moveItems(k === 'arrowleft' ? -G : k === 'arrowright' ? G : 0, k === 'arrowup' ? -G : k === 'arrowdown' ? G : 0); touch(); render(); }
+  else if (k.startsWith('arrow') && sel.size) { e.preventDefault(); pushUndo(); const cp = compMovePlan(); moveItems(k === 'arrowleft' ? -G : k === 'arrowright' ? G : 0, k === 'arrowup' ? -G : k === 'arrowdown' ? G : 0); if (cp) compMoveEnd(cp); touch(); render(); }
 });
 window.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; });
 
@@ -953,7 +993,7 @@ const rmouse = { x: 0, y: 0, in: false };
 const RHINT = {
   select: 'Realita: tažením ze svorky na svorku natáhnete vodič (klikáním do prázdna lomíte). Přístroj přesunete tažením, dvojklik = vlastnosti a barva, ⌫ = smazat. Barvu vodiče zvolíte v paletě.',
   place: 'Kliknutím vložíte přístroj (pomocný kontakt položte přímo na stykač, kontaktní blok na tlačítko). Esc = konec.',
-  wire: 'Vodič: klik na svorku = začátek, kliky do prázdna = lomové body, klik na další svorku = konec. ⌫ = zrušit poslední lom, Esc = zrušit.',
+  wire: 'Vodič: klik na svorku = začátek, kliky do prázdna = lomové body, klik na další svorku = připojit a pokračovat (hřebenové zapojení). Konec: znovu klik na poslední svorku, dvojklik nebo Esc. Tažení ze svorky na svorku = jeden vodič. ⌫ = zrušit poslední lom.',
   sim: 'SIMULACE PODLE REALITY: proud teče jen nataženými vodiči. Klikáním ovládáte jističe, tlačítka a přepínače (Shift = tlačítko zůstane stisknuté). Najetím na svorku změříte napětí.',
 };
 if (window.matchMedia && matchMedia('(pointer: coarse)').matches) {
@@ -1028,7 +1068,7 @@ function rDown(e) {
   }
   const h = rHit(x, y);
   if (rtool.kind === 'place') { rPlace(rtool.types, x, y, h && (h.dev || (h.term && h.term.g))); return; }
-  if (rdraft) { if (h && h.term) rFinish(h.term); else rdraft.p.push([Math.round(x * 2) / 2, Math.round(y * 2) / 2]); render(); return; }
+  if (rdraft) { if (h && h.term) rFinish(h.term, true); else rdraft.p.push([Math.round(x * 2) / 2, Math.round(y * 2) / 2]); render(); return; }
   if (h && h.term) { rdraft = { from: h.term, p: [], down: [e.clientX, e.clientY] }; rsel = new Set(); rwsel = -1; render(); return; }
   if (rtool.kind === 'wire') return;
   if (h && h.wire !== undefined) { rwsel = h.wire; rsel = new Set(); render(); return; }
@@ -1072,9 +1112,11 @@ function rUp(e) {
   if (d.kind === 'move' && d.moved) touch();
   render();
 }
-function rFinish(t) {
+function rFinish(t, cont) {
   const f = rdraft.from, p = rdraft.p; rdraft = null;
   if (t.key === f.key) return;
+  // klikání: vodič pokračuje z této svorky na další (hřebenové zapojení); konec = znovu klik na svorku, dvojklik, Esc
+  if (cont) { rdraft = { from: t, p: [], down: null }; hint('Svorka připojena – klikněte na další svorku (hřeben), nebo ukončete: znovu klik na tuto svorku, dvojklik, Esc.'); }
   pushUndo(); const w = { a: [f.it.uid, f.ti], b: [t.it.uid, t.ti], c: wcol, p }; doc.real.wires.push(w);
   if (wcol === 'auto') { const [c, why] = R.normColor(doc, w, wnorm); w.c = c; hint('Vodič: ' + why + ' → ' + (R.WNAME[c] || c) + ' (' + R.NORMS[wnorm].short + ')'); }
   rbad = null;

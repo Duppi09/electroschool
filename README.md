@@ -15,6 +15,11 @@ Obě verze sdílejí tentýž kód ve složce `app/`.
 open ios/ElectroSchool.xcodeproj   # aplikace pro iPadOS
 ```
 
+### Hřebenové zapojení a přesun zapojených prvků
+
+- **Hřeben:** vodič se při kreslení připojí ke každé svorce, na kterou klikneš, a pokračuje dál. Svorkami, na které nekliknete, jen prochází, takže nevznikne zkrat. Ukončíš ho dalším klikem na poslední bod, dvojklikem nebo Esc. Funguje ve schématu (i s automatickými vodiči: další klepnutí na svorku pokračuje, klepnutí do prázdna končí) i v Realitě.
+- **Přesun zapojeného prvku:** po puštění se vodiče od jeho svorek po nejbližší svorku nebo odbočku samy přepočítají a vedou volnou pravoúhlou cestou. Ostatní vodiče zůstanou beze změny. Během tažení oranžové čárkované čáry ukazují, kam se vodiče připojí. Totéž platí pro posun šipkami.
+
 ### Elektrotechnika a Arduino
 
 Třetí sada palety **Elektrotechnika** obsahuje:
