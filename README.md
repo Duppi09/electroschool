@@ -21,6 +21,12 @@ open ios/ElectroSchool.xcodeproj   # aplikace pro iPadOS
 - **iPad (automatické vodiče):** zůstává vlastní logika, vodiče se po každém propojení dvou bodů přepočítají tak, aby se nepřekrývaly.
 - **Přesun zapojeného prvku:** po puštění se vodiče od jeho svorek po nejbližší svorku nebo odbočku samy přepočítají a vedou volnou pravoúhlou cestou. Ostatní vodiče zůstanou beze změny. Během tažení oranžové čárkované čáry ukazují, kam se vodiče připojí. Totéž platí pro posun šipkami.
 
+### Ovládání prstem v simulaci a kontrola propojení
+
+- **Klepnutí v simulaci** stiskne prvek, jehož značka je prstu nejblíž. Ovladatelné prvky (tlačítka, spínače, jističe) mají přednost. Klepnutí na pomocný kontakt stykače nestiskne sousední tlačítko a naopak.
+- **Automatické vodiče:** svorka v dosahu prstu má vždy přednost před bodem na vodiči, aby se vodič omylem nepřipojil k cizí síti.
+- **Kontrola propojení:** po výběru vodiče se modře zvýrazní všechno, co je s ním opravdu spojené (vodiče i svorky). Tak se snadno najde, když tlačítko ovládá něco, co ovládat nemá.
+
 ### Dvoutarifní elektroměr (noční proud, HDO)
 
 V domovní instalaci (Rozvodnice) je **Elektroměr 3f dvoutarifní VT/NT s relé HDO**. Jde o moderní chytrý elektroměr, který měří zvlášť VT (vysoký, denní tarif) a NT (nízký tarif, noční proud). Výstupní relé R1–R2 je v NT sepnuté a ovládá cívku instalačního stykače spotřebičů na NT, třeba bojleru. Normy: ČSN EN IEC 62052-11, ČSN EN IEC 62053-21, ČSN EN 50470-3 (MID), tarifní řízení ČSN EN 62054-11 / -21. V simulaci klik na elektroměr = signál HDO (přepnutí tarifu). Ukázka *Domovní instalace 3f* má bojler zapojený přes relé HDO.

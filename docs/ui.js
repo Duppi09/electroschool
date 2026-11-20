@@ -117,6 +117,26 @@ function hit(x, y) {
   return null;
 }
 function termAt(x, y) { for (const it of doc.items) if (!ES.WIRE.has(it.type) && it.type !== ES.NODE) for (const [tx, ty] of ES.termsOf(it)) if (tx === x && ty === y) return true; return false; }
+// prvky, které se v simulaci ovládají klepnutím
+const PRESS_KINDS = new Set(['breaker', 'mswitch', 'mstarter', 'rcd', 'fuse', 'thermal', 'hsw', 'socket', 'socket3', 'load3']);
+const pressable = d => !!(d.click || d.tariff || PRESS_KINDS.has(d.kind));
+// cíl klepnutí v simulaci: přednost má ovladatelný prvek nejblíž prstu / kurzoru (obrys kontaktu
+// sahá daleko doleva kvůli značce ovládání, takže by jinak mohl „vyhrát“ sousední pomocný kontakt)
+function simTarget(x, y) {
+  const tol = (T && T.id !== null) ? Math.max(1.5, 8 / view.s) : 0;
+  let best = null;
+  for (const it of doc.items) {
+    const d = ES.getDef(it.type); if (!d.terms || !d.terms.length || ES.WIRE.has(it.type)) continue;
+    const pr = pressable(d), t = pr ? tol : 0, b = itemBox(it);
+    if (x < b[0] - t || x > b[2] + t || y < b[1] - t || y > b[3] + t) continue;
+    // vzdálenost od čáry značky (svisle mezi svorkami) – rozhoduje, čí značka je prstu nejblíž
+    const tp = ES.termsOf(it); let dd = Infinity;
+    for (let i = 0; i < tp.length; i++) for (let j = i; j < tp.length; j++) dd = Math.min(dd, segDist(x, y, tp[i][0], tp[i][1], tp[j][0], tp[j][1]));
+    dd = Math.min(dd, Math.hypot(x - (b[0] + b[2]) / 2, y - (b[1] + b[3]) / 2) + 2);
+    if (!best || dd < best[1]) best = [it, dd];
+  }
+  return best ? best[0] : hit(x, y);
+}
 function connectsAt(x, y) {
   for (const it of doc.items) {
     if (ES.WIRE.has(it.type)) { const n = it.n; if ((n[8] === x && n[9] === y) || (n[10] === x && n[11] === y) || ES.onSeg(x, y, [n[8], n[9], n[10], n[11]])) return true; }
@@ -148,7 +168,7 @@ function drawScene(c, opt) {
     c.fillStyle = col; c.beginPath(); c.arc(x, y, 0.75, 0, 7); c.fill();
   }
 }
-let pcache = { ver: -1, pts: [] }, passHover = false;
+let pcache = { ver: -1, pts: [] }, passHover = false, ncache = { ver: -1, nets: null }, selNetHint = null;
 function render() {
   resize();
   if (mode === 'real') return renderReal();
@@ -174,6 +194,20 @@ function render() {
       for (const it of doc.items) if (!ES.WIRE.has(it.type) && it.type !== ES.NODE) for (const [x, y] of ES.termsOf(it))
         if (ws.some(w => ES.onSeg(x, y, [w.n[8], w.n[9], w.n[10], w.n[11]])) && !ws.some(w => (w.n[8] === x && w.n[9] === y) || (w.n[10] === x && w.n[11] === y))) pcache.pts.push([x, y]);
     }
+    // vybraný vodič: zvýraznit celou jeho síť (co všechno je s ním opravdu spojené)
+    if (sel.size === 1) {
+      const w = doc.items.find(i => sel.has(i.uid));
+      if (w && ES.WIRE.has(w.type) && w.type !== 10106) {
+        if (ncache.ver !== ver) ncache = { ver, nets: ES.buildNets(doc) };
+        const nets = ncache.nets, id = nets.ofKey.get(w.n[8] + ',' + w.n[9]);
+        ctx.save(); ctx.globalAlpha = 0.35; ctx.strokeStyle = '#0a66e8'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+        for (const i of doc.items) if (ES.WIRE.has(i.type) && nets.ofKey.get(i.n[8] + ',' + i.n[9]) === id) { ctx.beginPath(); ctx.moveTo(i.n[8], i.n[9]); ctx.lineTo(i.n[10], i.n[11]); ctx.stroke(); }
+        ctx.globalAlpha = 0.9; ctx.lineWidth = 0.45; let k = 0;
+        for (const i of doc.items) if (!ES.WIRE.has(i.type) && i.type !== ES.NODE) for (const [x, y] of ES.termsOf(i)) if (nets.ofKey.get(x + ',' + y) === id) { ctx.beginPath(); ctx.arc(x, y, 1.6, 0, 7); ctx.stroke(); k++; }
+        ctx.restore();
+        if (selNetHint !== w.uid) { selNetHint = w.uid; hint('Vybraný vodič: modře je zvýrazněno vše, co je s ním spojené (' + k + ' svorek). Tak snadno najdete špatné propojení.'); }
+      }
+    } else selNetHint = null;
     if (pcache.pts.length) { ctx.strokeStyle = '#d92b2b'; ctx.lineWidth = 0.45; for (const [x, y] of pcache.pts) { ctx.beginPath(); ctx.arc(x, y, 1.5, 0, 7); ctx.stroke(); } }
     // svorky při kreslení vodiče
     if (tool.kind === 'wire') {
@@ -505,7 +539,7 @@ const ROUTED_W = new Set([4000, 4009, 4010]);
 function pickPoint(rx, ry) {
   const rad = Math.max(2.4, (T && T.id !== null ? 24 : 14) / view.s); let best = null;
   for (const it of doc.items) for (const [x, y] of ES.termsOf(it)) { const d = Math.hypot(x - rx, y - ry); if (d < rad && (!best || d < best.d)) best = { p: [x, y], d, term: true }; }
-  if (best && best.d < rad * 0.8) return best;
+  if (best) return best; // svorka v dosahu má vždy přednost (prstem se nepřipojí omylem k cizímu vodiči)
   for (const it of doc.items) {
     if (!ROUTED_W.has(it.type)) continue;
     const [x1, y1, x2, y2] = [it.n[8], it.n[9], it.n[10], it.n[11]]; let q;
@@ -542,7 +576,7 @@ cv.addEventListener('mousedown', e => {
   mouse.rx = rx; mouse.ry = ry; mouse.x = x; mouse.y = y;
   if (e.button === 1 || spaceDown) { drag = { kind: 'pan', cx: e.clientX, cy: e.clientY }; cv.style.cursor = 'grabbing'; return; }
   if (e.button !== 0) return;
-  if (sim) { const it = hit(rx, ry); if (it && ES.simPress(sim, it, true, e.shiftKey, partOf(it, rx, ry))) { pressed = it; simTick(0); } return; }
+  if (sim) { const it = simTarget(rx, ry); if (it && ES.simPress(sim, it, true, e.shiftKey, partOf(it, rx, ry))) { pressed = it; simTick(0); } return; }
   if (tool.kind === 'place') { place(tool.type, x, y); render(); return; }
   if (autoOn(tool)) { cand = pickPoint(rx, ry); drag = { kind: 'conn' }; render(); return; }
   if (tool.kind === 'wire') {
@@ -593,7 +627,7 @@ window.addEventListener('mousemove', e => {
     else { const h = hit(rx, ry); if (h !== hover || passHover) { passHover = false; hover = h; hint((h && linkHint(h)) || HINTS.select); } }
   }
   if (!sim || drag) render();
-  if (sim && !drag) { const it = hit(rx, ry), c = it && sim.byUid.get(it.uid); hover = it; cv.style.cursor = c && (c.d.click || c.d.kind === 'breaker' || c.d.kind === 'mswitch' || c.d.kind === 'thermal' || c.d.kind === 'fuse' || c.d.kind === 'mstarter' || c.d.kind === 'rcd' || c.d.kind === 'hsw' || c.d.kind === 'socket' || c.d.kind === 'socket3' || c.d.kind === 'load3') ? 'pointer' : 'default'; }
+  if (sim && !drag) { hover = hit(rx, ry); const pt = simTarget(rx, ry); cv.style.cursor = pt && pressable(ES.getDef(pt.type)) ? 'pointer' : 'default'; }
 });
 window.addEventListener('mouseup', e => {
   if (mode === 'real') return rUp(e);
@@ -1317,7 +1351,7 @@ window.ESApp = {
   cmd, isDirty: () => dirty, setTab: t => setTab(t),
   loadFile: async (name, data, path) => { if (await confirmDiscard()) loadBytes(name, unb64(data), path); },
   saved: (name, path) => { fileName = name; filePath = path; dirty = false; title(); },
-  _debug: () => ({ doc, sim, view, rview, mode, hit, setTool, sel }),
+  _debug: () => ({ doc, sim, view, rview, mode, hit, simTarget, setTool, sel }),
 };
 $('#autort').classList.toggle('on', autoRoute);
 (window.ES_EXAMPLES || []).forEach((ex, i) => { const o = document.createElement('option'); o.value = i; o.textContent = ex.title; $('#examples').append(o); });
